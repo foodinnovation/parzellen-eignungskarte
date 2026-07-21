@@ -132,10 +132,15 @@
       <label>Klima (Wachstum) <b><span id="v-wclim">50</span></b></label>
       <input type="range" min="0" max="100" value="50" id="w-clim">
     </div>
+    <div class="ctrl">
+      <label>Mühlennähe <b><span id="v-wmill">0</span></b></label>
+      <input type="range" min="0" max="100" value="0" id="w-mill">
+    </div>
     <p class="note">Relative Gewichte im 0–100-Score (gewichtetes Mittel über die
       vorhandenen Faktoren). Boden/Terrain wirken auf angereicherte Parzellen
       (<code>--geoadmin</code>/ETL); Diversität = Kulturvielfalt im ~500-m-Umfeld;
-      Klima = Wachstumsgradtage (<code>climate.json</code>, gilt auch live).</p>
+      Klima = Wachstumsgradtage (<code>climate.json</code>). Mühlennähe: 100 an der
+      Mühle → 0 bei der im Filter gewählten Distanz (Standardgewicht 0 = aus).</p>
   </div>
 
   <div class="sec">
@@ -350,9 +355,9 @@ function ui(){return{
 // crop affinity alone. Terrain/diversity/climate weights are added in later phases.
 function weights(){
   const g=id=>{const el=document.getElementById(id);return el?+el.value:null;};
-  const crop=g('w-crop'), soil=g('w-soil'), terrain=g('w-terrain'), div=g('w-div'), clim=g('w-clim');
+  const crop=g('w-crop'), soil=g('w-soil'), terrain=g('w-terrain'), div=g('w-div'), clim=g('w-clim'), mill=g('w-mill');
   return {crop:crop==null?100:crop, soil:soil==null?0:soil, terrain:terrain==null?0:terrain,
-          div:div==null?0:div, clim:clim==null?0:clim};   // 0 is valid — fall back only when the slider is absent
+          div:div==null?0:div, clim:clim==null?0:clim, mill:mill==null?0:mill};   // 0 is valid — fall back only when the slider is absent
 }
 // smooth 100→0 ramp: full score up to (thr-width), zero beyond (thr+width)
 function softBelow(v,thr,width){
@@ -381,6 +386,10 @@ function scoreFeature(props){
   if(terrain!=null) parts.push({key:'Terrain',v:terrain,w:w.terrain});
   if(props._div!=null)  parts.push({key:'Diversität',v:+props._div, w:w.div});   // Umfeld-Kulturvielfalt (annotate)
   if(props._clim!=null) parts.push({key:'Klima',     v:+props._clim,w:w.clim});   // GDD-Raster (climate.json)
+  if(props._millkm!=null){                                                        // Mühlennähe: 100 an der Mühle → 0 bei Radius
+    const mf=Math.max(0,Math.min(100,Math.round(100*(1-props._millkm/Math.max(1,s.millKm)))));
+    parts.push({key:'Mühlennähe',v:mf,w:w.mill});
+  }
   const wsum=parts.reduce((a,p)=>a+p.w,0)||1;
   const score=parts.reduce((a,p)=>a+p.v*p.w,0)/wsum;
   return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,reason,cat:c.cat,parts};
@@ -800,12 +809,13 @@ document.getElementById('chk-mills').addEventListener('change',e=>{
 });
 
 // score weights → live re-score
-['w-crop','w-soil','w-terrain','w-div','w-clim'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
+['w-crop','w-soil','w-terrain','w-div','w-clim','w-mill'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
   document.getElementById('v-wcrop').textContent=document.getElementById('w-crop').value;
   document.getElementById('v-wsoil').textContent=document.getElementById('w-soil').value;
   document.getElementById('v-wterrain').textContent=document.getElementById('w-terrain').value;
   document.getElementById('v-wdiv').textContent=document.getElementById('w-div').value;
   document.getElementById('v-wclim').textContent=document.getElementById('w-clim').value;
+  document.getElementById('v-wmill').textContent=document.getElementById('w-mill').value;
   rescore();
 }));
 
