@@ -1,4 +1,4 @@
-# Parzellen-Eignungskarte Schweiz — Anleitung
+# Parzellen-Eignungskarte Schweiz
 
 Eine statische Web-Karte, die landwirtschaftliche Parzellen der ganzen Schweiz
 nach Eignung für die Mischkultur-Adoption einfärbt (0–100), plus regionalen
@@ -6,76 +6,77 @@ BFS-Kontext (Bio-Anteil, Betriebsform, Grünland) pro Kanton. Basiert
 ausschliesslich auf öffentlichen Geodaten (geodienste.ch, geo.admin.ch, BFS).
 
 Für die Forschung: dynamische Karten erstellen, *bevor* man mit Fragebögen ins
-Feld geht.
+Feld geht. Die Karte hebt **Parzellen/Flächen** hervor, nie namentlich Personen —
+das ist auf öffentlichen Daten die einzige rechtlich saubere Bauweise.
 
 ---
 
-## Dateien in diesem Ordner
+## 🔗 Die Karte live ansehen
+
+**<https://foodinnovation.github.io/parzellen-eignungskarte/parzellen-eignungskarte.html>**
+
+Das ist der Link zum Teilen. Kolleg:innen, die nur schauen wollen, brauchen
+**nur diese URL** — die Python-Skripte fassen sie nie an. Nötig ist lediglich
+eine Internetverbindung (Kartenkacheln von swisstopo, Live-Daten von
+geodienste.ch).
+
+> Die Karte wird über GitHub Pages aus diesem Repo ausgeliefert. Jeder Push auf
+> den `main`-Branch aktualisiert die veröffentlichte Karte nach ~1 Minute
+> automatisch.
+
+---
+
+## Was die Karte kann (ohne Zusatzdaten)
+
+Die gehostete Karte funktioniert **sofort im Live-Modus**: sie lädt Parzellen
+beim Hineinzoomen (Stufe ≥ 13) direkt von geodienste.ch und die BFS-/Kantons­daten
+live. Es ist **keine** Ausführung der Python-Skripte nötig, um zu starten.
+
+Bedienung: Filter-Panel mit Preset «Mischkultur-Eignung», Reglern für
+Gewichtung (Boden, Hangneigung, Zonen) und Schwellen (max. Hangneigung, max.
+Höhe), sowie einem Kanton-Choropleth für den BFS-Kontext.
+
+Die optional «gebackenen» Dateien (siehe unten) machen die Karte schneller,
+offline-robuster und unabhängig von möglichen CORS-Einschränkungen — empfohlen
+für den produktiven Einsatz.
+
+---
+
+## Dateien in diesem Repo
 
 | Datei | Zweck | Für wen |
 |---|---|---|
 | `parzellen-eignungskarte.html` | Die Karte. Das ist alles, was Betrachter brauchen. | alle |
-| `build_canton.py` | Optional: bäckt einen Kanton in eine statische Datei (mit Boden/Hangneigung). | techn. Person |
-| `build_bfs.py` | Optional: lädt die BFS-Kantonszahlen als Datei. | techn. Person |
-| `farm-parcel-map-build-plan.md` | Konzept & Architektur. | Doku |
+| `build_canton.py` | Optional: bäckt einen Kanton in eine statische GeoJSON (mit Boden/Hangneigung). | techn. Person |
+| `build_bfs.py` | Optional: lädt die BFS-Kantonszahlen als JSON. | techn. Person |
+| `farm-parcel-map-build-plan.md` | Konzept & Architektur, Roadmap. | Doku |
 | `phase0-spike-findings.md` | Datenverfügbarkeit & Machbarkeit. | Doku |
 
-Kolleg:innen, die nur schauen wollen, brauchen **nur die URL** der gehosteten
-Karte — die Python-Skripte fassen sie nie an.
+Nicht im Repo (per `.gitignore` ausgeschlossen): die gebackenen Datendateien
+`parcels_scored.geojson`, `bfs_cantons.json`, `cantons.geojson` — sie sind
+regenerierbare Ausgaben der Skripte. Wer sie mit ausliefern will, legt sie
+neben die `.html`; die Karte findet sie automatisch.
 
-> **Wichtig:** Die Karte per Doppelklick zu öffnen (`file://`) funktioniert nur
+> **Hinweis:** Die Karte per Doppelklick zu öffnen (`file://`) funktioniert nur
 > eingeschränkt — der Browser blockiert das Nachladen der Daten. Die Karte muss
-> **über HTTP ausgeliefert** (gehostet) werden. Deshalb diese Anleitung.
+> **über HTTP ausgeliefert** werden. Genau das übernimmt GitHub Pages (oben).
 
 ---
 
-## Variante A — GitHub Pages (kostenlos, empfohlen)
+## Aktualisieren
 
-Ergebnis: eine Link-URL, die alle im Browser öffnen können.
+Änderungen an der Karte oder den Skripten committen und pushen — GitHub Pages
+baut automatisch neu:
 
-1. Konto auf <https://github.com> erstellen (falls noch keins).
-2. **New repository** → Name z.B. `parzellen-eignungskarte` → **Public** →
-   *Create repository*.
-3. **Add file → Upload files** → diese Dateien hochladen:
-   - `parzellen-eignungskarte.html` (zwingend)
-   - falls vorhanden: `parcels_scored.geojson`, `bfs_cantons.json`,
-     `cantons.geojson` (die gebackenen Daten — optional, siehe unten)
-   - *Commit changes*.
-4. **Settings → Pages** → unter *Branch* `main` und `/ (root)` wählen → *Save*.
-5. Nach ~1 Minute erscheint oben die Adresse, z.B.
-   `https://<benutzername>.github.io/parzellen-eignungskarte/`
-6. Die Karte liegt dann unter:
-   `https://<benutzername>.github.io/parzellen-eignungskarte/parzellen-eignungskarte.html`
-   → **dieser Link ist das, was du teilst.**
+```bash
+git add -A
+git commit -m "…"
+git push
+```
 
-Aktualisieren: einfach die Datei(en) im Repo neu hochladen (Upload überschreibt).
-
-Tipp: Wer die Startseite hübscher will, benennt die Karte in `index.html` um —
-dann reicht die kurze URL `https://<benutzername>.github.io/parzellen-eignungskarte/`.
-
----
-
-## Variante B — Institutioneller Webspace / SharePoint
-
-- **Eigener Webserver / Intranet-Webspace:** die `.html` (und optionale
-  Datendateien) in einen per HTTP ausgelieferten Ordner legen. Fertig.
-- **SharePoint/OneDrive:** eignet sich schlecht — Dateien werden meist zum
-  Download angeboten statt als Website dargestellt. Lieber Variante A oder den
-  IT-Webspace nutzen.
-- **Netlify Drop** (<https://app.netlify.com/drop>): Ordner ins Browserfenster
-  ziehen → sofort eine öffentliche URL. Am schnellsten ohne Konto-Setup.
-
----
-
-## Was die Karte ohne gebackene Daten kann
-
-Die gehostete `.html` funktioniert **sofort** (Live-Modus): sie lädt Parzellen
-beim Hineinzoomen direkt von geodienste.ch und die BFS-/Kantonsdaten live. Es
-ist **keine** Ausführung der Python-Skripte nötig, um zu starten.
-
-Die gebackenen Dateien (unten) machen die Karte schneller, offline-robuster und
-unabhängig von möglichen CORS-Einschränkungen — empfohlen für den produktiven
-Einsatz.
+Gebackene Datendateien mit ausliefern: entweder lokal neben die `.html` legen
+(nur eigener Webserver), oder für GitHub Pages die entsprechende Zeile aus
+`.gitignore` entfernen und die Datei mitcommitten.
 
 ---
 
@@ -95,11 +96,20 @@ python3 build_canton.py --canton AG \
     --soil bodeneignung_kulturland.gpkg --dem swissalti3d_ag.tif
 ```
 
-Die erzeugten `.geojson`/`.json` einfach **neben** die `.html` legen (bzw. mit
-ins Repo hochladen) — die Karte findet sie automatisch.
-
 Zugriff pro Kanton: 24 von 26 Kantonen sind frei. **Tessin (TI)** verlangt
 Registrierung, **Neuchâtel (NE)** nur für den Massen-Download.
+
+---
+
+## Alternative Hosting-Wege
+
+- **Eigener Webserver / Intranet-Webspace:** die `.html` (und optionale
+  Datendateien) in einen per HTTP ausgelieferten Ordner legen. Fertig.
+- **SharePoint/OneDrive:** eignet sich schlecht — Dateien werden meist zum
+  Download angeboten statt als Website dargestellt. Lieber GitHub Pages oder den
+  IT-Webspace nutzen.
+- **Netlify Drop** (<https://app.netlify.com/drop>): Ordner ins Browserfenster
+  ziehen → sofort eine öffentliche URL. Am schnellsten ohne Konto-Setup.
 
 ---
 
@@ -107,7 +117,11 @@ Registrierung, **Neuchâtel (NE)** nur für den Massen-Download.
 
 - Internet ist immer nötig (Kartenkacheln von swisstopo, Live-Daten).
 - Sprache der Oberfläche: Deutsch.
-- Der Eignungs-Score ist eine transparente Heuristik zur Priorisierung von
+- Der Eignungs-Score ist eine **transparente Heuristik** zur Priorisierung von
   Feldstandorten — keine validierte agronomische Bewertung; im Feld prüfen.
+  Ackerkulturen erhalten hohe, Grünland/Futterbau (Viehhaltungs-Proxy) tiefe
+  Werte; alle Schwellen und Gewichte sind im Panel einstellbar.
+- Per-Betrieb-Merkmale (Betriebsgrösse, IP-Suisse, Direktzahlungen) sind **nicht**
+  öffentlich und daher nicht in der Karte — sie bleiben Feldarbeit.
 - Quellen: geodienste.ch (Nutzungsflächen), geo.admin.ch/BLW (Bodeneignung,
   Hangneigung), BFS STAT-TAB (Betriebsstruktur).
