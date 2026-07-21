@@ -35,6 +35,8 @@
   .ctrl{margin:12px 0}
   .ctrl label{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px}
   .ctrl label b{font-weight:700;color:var(--accent)}
+  .ctrl.inactive{opacity:.5}
+  .winact{color:#b06a00;font-weight:600;font-size:11px}
   .note{font-size:11.5px;color:var(--muted);line-height:1.45}
   .basemap{display:flex;gap:6px}
   .basemap button{flex:1;border:1px solid var(--line);background:var(--chip);padding:7px;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;color:var(--ink)}
@@ -116,12 +118,12 @@
       <label>Kultur-Eignung <b><span id="v-wcrop">100</span></b></label>
       <input type="range" min="0" max="100" value="100" id="w-crop">
     </div>
-    <div class="ctrl">
-      <label>Bodeneignung <b><span id="v-wsoil">60</span></b></label>
+    <div class="ctrl" id="ctrl-wsoil">
+      <label>Bodeneignung <b><span id="v-wsoil">60</span></b><span id="hint-wsoil" class="winact"></span></label>
       <input type="range" min="0" max="100" value="60" id="w-soil">
     </div>
-    <div class="ctrl">
-      <label>Terrain (Hang/Höhe) <b><span id="v-wterrain">70</span></b></label>
+    <div class="ctrl" id="ctrl-wterrain">
+      <label>Terrain (Hang/Höhe) <b><span id="v-wterrain">70</span></b><span id="hint-wterrain" class="winact"></span></label>
       <input type="range" min="0" max="100" value="70" id="w-terrain">
     </div>
     <div class="ctrl">
@@ -465,6 +467,17 @@ function rescore(){
   for(const f of lastFC.features){const r=scoreFeature(f.properties);
     f.properties.score=r.score;f.properties.excluded=r.excluded;f.properties._catde=CAT_DE[r.cat]||r.cat;}
   if(map.getSource('parcels'))map.getSource('parcels').setData(lastFC);
+  updateWeightState();
+}
+// Grey out the Boden/Terrain weight sliders while no loaded parcel carries that data
+function updateWeightState(){
+  const fs=(lastFC&&lastFC.features)||[];
+  const hasSoil=fs.some(f=>f.properties.soil_score!=null);
+  const hasTerr=fs.some(f=>f.properties.slope!=null||f.properties.elev!=null);
+  const set=(ctrl,hint,ok)=>{const c=document.getElementById(ctrl),h=document.getElementById(hint);
+    if(c)c.classList.toggle('inactive',!ok); if(h)h.textContent=ok?'':' · inaktiv, erst anreichern';};
+  set('ctrl-wsoil','hint-wsoil',hasSoil);
+  set('ctrl-wterrain','hint-wterrain',hasTerr);
 }
 async function loadParcels(){
   if(hasLocal)return;                       // an ETL file is loaded → don't overwrite with live view
@@ -604,12 +617,23 @@ async function loadMills(){
     MILL_PTS=(j.features||[]).map(f=>f.geometry&&f.geometry.coordinates).filter(Boolean);
   }catch(e){}
 }
-function kmToNearestMill(lon,lat){
+function nearestMill(lon,lat){
   if(!MILL_PTS.length) return null;
   const latf=111.0, lonf=111.0*Math.cos(lat*Math.PI/180);
-  let best=Infinity;
-  for(const m of MILL_PTS){ const dx=(m[0]-lon)*lonf, dy=(m[1]-lat)*latf, d=dx*dx+dy*dy; if(d<best)best=d; }
-  return Math.round(Math.sqrt(best)*10)/10;
+  let best=Infinity, bm=null;
+  for(const m of MILL_PTS){ const dx=(m[0]-lon)*lonf, dy=(m[1]-lat)*latf, d=dx*dx+dy*dy; if(d<best){best=d;bm=m;} }
+  return {km:Math.round(Math.sqrt(best)*10)/10, m:bm};
+}
+function kmToNearestMill(lon,lat){ const n=nearestMill(lon,lat); return n?n.km:null; }
+// actual road distance/time to the (straight-line) nearest mill — OSRM public, on demand
+async function millRoadDistance(lon,lat){
+  const n=nearestMill(lon,lat); if(!n) return null;
+  try{
+    const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${lon},${lat};${n.m[0]},${n.m[1]}?overview=false`);
+    if(!r.ok) return null; const d=await r.json();
+    if(d.code!=='Ok'||!d.routes||!d.routes.length) return null;
+    return {km:Math.round(d.routes[0].distance/100)/10, min:Math.round(d.routes[0].duration/60)};
+  }catch(e){ return null; }
 }
 
 function centroidLonLat(geom){
@@ -860,14 +884,17 @@ function respond(){tgl.style.display=window.innerWidth<640?'block':'none';if(win
 window.addEventListener('resize',respond);respond();
 
 /* parcel popup */
-function parcelPopupHTML(p,note){
+function parcelPopupHTML(p,note,road){
   const r=scoreFeature(p);                        // recompute fresh → factor breakdown
   const rows=r.parts.map(pt=>`&nbsp;&nbsp;${pt.key}: <b>${Math.round(pt.v)}</b> <span style="color:#8a97a5">· Gewicht ${pt.w}</span>`).join('<br>');
+  const millLine = p._millkm==null ? '' :
+    `<br>Nächste Mühle: <b>${p._millkm} km</b> Luftlinie`+
+      (road==='pending' ? ` · Strasse <span style="color:#8a97a5">…</span>`
+       : road ? ` · Strasse <b>${road.km} km</b> (${road.min} min Fahrt)` : '');
   return `<b>${p.nutzung||'Nutzung ?'}</b><br>`+
     `Kategorie: ${CAT_DE[r.cat]||r.cat}<br>`+
     `LNF-Code: ${p.lnf_code||'—'} · ${p.flaeche_m2?(+p.flaeche_m2/10000).toFixed(2)+' ha':''}<br>`+
-    `Kanton: ${p.kanton||'—'} · Jahr: ${p.bezugsjahr||'—'}`+
-    (p._millkm!=null?`<br>Nächste Getreidemühle: <b>${p._millkm} km</b>`:'')+
+    `Kanton: ${p.kanton||'—'} · Jahr: ${p.bezugsjahr||'—'}`+ millLine +
     `<hr style="border:none;border-top:1px solid #e2e8ef;margin:6px 0">`+
     `<div style="font-size:11.5px;color:#5c6b7a">Faktoren:<br>${rows}`+
       (note?`<br><span style="color:#2f7d4f">${note}</span>`:'')+`</div>`+
@@ -878,17 +905,17 @@ map.on('click','parcels-fill',async e=>{
   const feature=(lastFC&&lastFC.features&&fid!=null&&lastFC.features[fid])
     ? lastFC.features[fid]                        // live reference (generateId → id == index)
     : {properties:e.features[0].properties,geometry:e.features[0].geometry};
-  const p=feature.properties;
+  const p=feature.properties, cen=centroidLonLat(feature.geometry);
   const needEnrich=!hasLocal && (p.soil_score==null||p.slope==null);
+  const wantRoad=!!(cen && MILL_PTS.length);
+  let road=wantRoad?'pending':null, note=needEnrich?'Boden & Terrain werden geladen …':'';
   const popup=new maplibregl.Popup().setLngLat(e.lngLat)
-    .setHTML(parcelPopupHTML(p,needEnrich?'Boden & Terrain werden geladen …':'')).addTo(map);
-  if(needEnrich){
-    const changed=await enrichParcelLive(feature);
-    if(popup.isOpen()){
-      if(changed){ rescore(); popup.setHTML(parcelPopupHTML(p,'')); }
-      else popup.setHTML(parcelPopupHTML(p,'Boden/Terrain nicht verfügbar.'));
-    } else if(changed){ rescore(); }
-  }
+    .setHTML(parcelPopupHTML(p,note,road)).addTo(map);
+  const tasks=[];
+  if(needEnrich) tasks.push(enrichParcelLive(feature).then(ch=>{ if(ch){rescore();note='';} else note='Boden/Terrain nicht verfügbar.'; }));
+  if(wantRoad)   tasks.push(millRoadDistance(cen[0],cen[1]).then(rd=>{ road=rd||null; }));
+  await Promise.all(tasks);
+  if(popup.isOpen()) popup.setHTML(parcelPopupHTML(p,note,road));
 });
 map.on('mouseenter','parcels-fill',()=>map.getCanvas().style.cursor='pointer');
 map.on('mouseleave','parcels-fill',()=>map.getCanvas().style.cursor='');

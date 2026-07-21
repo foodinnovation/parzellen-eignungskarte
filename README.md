@@ -37,7 +37,10 @@ Der Score ist ein transparentes, gewichtetes Mittel aus bis zu fünf Faktoren �
 alle Gewichte im Panel einstellbar. Kultur, Diversität und Klima sind live überall
 verfügbar; **Boden und Terrain** holt die Karte auf **Klick** pro Parzelle direkt
 von geo.admin (oder per Knopf «Sichtbare Parzellen anreichern» für den ganzen
-Ausschnitt).
+Ausschnitt) — die Boden-/Terrain-Gewichte sind ausgegraut, solange keine solchen
+Daten geladen sind. Ein Klick zeigt zudem **Luft- und Strassendistanz** zur
+nächsten Getreidemühle (Strassenroute via OSRM). Mühlennähe ist auch als weicher
+Score-Faktor wählbar.
 
 Bedienung: Preset «Mischkultur-Eignung», Score-Gewichts-Regler, weiche
 Hang-/Höhen-Schwellen, Kontext-Raster (Boden, Hangneigung) und ein
