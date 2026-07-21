@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Parzellen-Eignungskarte Schweiz — Prototyp v2</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<style>
+  :root{--panel:#fff;--ink:#1a2430;--muted:#5c6b7a;--line:#e2e8ef;--accent:#2f7d4f;--chip:#f1f5f9}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink)}
+  #map{position:absolute;inset:0}
+  .topbar{position:absolute;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:12px;
+    padding:10px 16px;background:rgba(15,23,32,.86);color:#fff;backdrop-filter:blur(6px)}
+  .topbar h1{font-size:15px;margin:0;font-weight:600}
+  .topbar .tag{font-size:11px;background:var(--accent);padding:2px 8px;border-radius:10px;font-weight:600}
+  .topbar .sub{font-size:12px;color:#9fb0c0;margin-left:auto}
+  .status{position:absolute;top:56px;left:14px;z-index:6;background:rgba(255,255,255,.95);border:1px solid var(--line);
+    border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:600;box-shadow:0 6px 16px rgba(0,0,0,.12);max-width:60vw}
+  .panel{position:absolute;top:56px;right:14px;z-index:6;width:322px;max-height:calc(100% - 76px);overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 34px rgba(10,20,30,.22)}
+  .panel .sec{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .panel .sec:last-child{border-bottom:none}
+  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 10px}
+  .preset{display:flex;gap:8px;flex-wrap:wrap}
+  .preset button{flex:1;min-width:120px;border:1px solid var(--line);background:var(--chip);padding:9px 10px;
+    border-radius:9px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
+  .preset button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .lyr{display:flex;align-items:center;gap:9px;margin:9px 0}
+  .lyr input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex:none}
+  .lyr .nm{font-size:13px;flex:1;line-height:1.25}
+  .lyr .sw{width:14px;height:14px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.15)}
+  .op{width:100%;margin:2px 0 0} input[type=range]{width:100%;accent-color:var(--accent)}
+  .ctrl{margin:12px 0}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px}
+  .ctrl label b{font-weight:700;color:var(--accent)}
+  .note{font-size:11.5px;color:var(--muted);line-height:1.45}
+  .basemap{display:flex;gap:6px}
+  .basemap button{flex:1;border:1px solid var(--line);background:var(--chip);padding:7px;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;color:var(--ink)}
+  .basemap button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .legend{position:absolute;bottom:16px;left:14px;z-index:6;background:rgba(255,255,255,.95);border:1px solid var(--line);
+    border-radius:12px;padding:11px 13px;max-width:300px;box-shadow:0 8px 22px rgba(10,20,30,.15)}
+  .legend h3{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .legend .row{display:flex;align-items:center;gap:8px;font-size:12px;margin:4px 0}
+  .legend .box{width:14px;height:14px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.15)}
+  .ramp{height:12px;border-radius:6px;margin:6px 0 4px;background:linear-gradient(90deg,#c0392b,#e67e22,#f4d03f,#7fb069,#2f7d4f)}
+  .ramp-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+  .bfs{position:absolute;left:14px;top:104px;z-index:6;background:rgba(255,255,255,.96);border:1px solid var(--line);
+    border-radius:12px;padding:11px 13px;width:252px;box-shadow:0 8px 22px rgba(10,20,30,.15)}
+  .bfs h3{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .bfs .k{font-size:13px;font-weight:700;margin-bottom:6px}
+  .bfs .r{font-size:12px;margin:6px 0}
+  .bfs .bar{height:8px;border-radius:5px;background:#eef2f6;overflow:hidden;margin-top:3px}
+  .bfs .bar>span{display:block;height:100%;background:var(--accent)}
+  .bfs .hint{font-size:11px;color:var(--muted);line-height:1.4}
+  @media (max-width:640px){.bfs{display:none}}
+  .toggle-panel{position:absolute;top:56px;right:14px;z-index:7;display:none;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.15)}
+  .maplibregl-popup-content{font-size:12.5px;padding:10px 12px;border-radius:9px}
+  .foot{font-size:10.5px;color:var(--muted);padding:10px 16px}
+  @media (max-width:640px){.panel{width:calc(100% - 28px)}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <h1>Landwirtschaftliche Parzellen-Eignungskarte</h1>
+  <span class="tag">Prototyp v2</span>
+  <span class="sub">öffentliche Geodaten · geodienste.ch · geo.admin.ch · BFS</span>
+</div>
+
+<div class="status" id="status">Zum Laden der Parzellen hineinzoomen (Stufe ≥ 13).</div>
+<button class="toggle-panel" id="togglePanel">☰ Filter</button>
+
+<div class="panel" id="panel">
+  <div class="sec">
+    <h2>Voreinstellung</h2>
+    <div class="preset">
+      <button data-preset="mixed" class="active">Mischkultur-Eignung</button>
+      <button data-preset="blank">Leer</button>
+    </div>
+    <p class="note" style="margin-top:10px">Zeigt jede Parzelle mit einem <b>Eignungs-Score 0–100</b> für die
+      Mischkultur-Adoption. Ackerkulturen erhalten hohe Werte, Tierhaltungs-/Grünland-Systeme werden
+      ausgeschlossen (grau). Boden- und Hangneigung als Kontext-Ebenen; im ETL-Modus fliessen sie in den Score ein.</p>
+  </div>
+
+  <div class="sec">
+    <h2>Bewertungs-Ebene</h2>
+    <div class="lyr">
+      <input type="checkbox" id="chk-score" checked>
+      <span class="sw" style="background:linear-gradient(90deg,#c0392b,#2f7d4f)"></span>
+      <span class="nm">Eignungs-Score (Parzellen)</span>
+    </div>
+    <input class="op" type="range" min="0" max="100" value="78" id="op-score">
+    <div class="lyr" style="margin-top:6px">
+      <input type="checkbox" id="chk-live" checked>
+      <span class="nm">Live aus geodienste.ch laden (beim Zoomen)</span>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>Kontext-Ebenen</h2>
+    <div class="lyr">
+      <input type="checkbox" id="chk-soil" checked>
+      <span class="sw" style="background:#339966"></span>
+      <span class="nm">Bodeneignung – Kulturland</span>
+    </div>
+    <input class="op" type="range" min="0" max="100" value="45" id="op-soil">
+    <div class="lyr">
+      <input type="checkbox" id="chk-slope" checked>
+      <span class="sw" style="background:#c0392b"></span>
+      <span class="nm">Hangneigung &gt; 30° (Ausschluss)</span>
+    </div>
+    <input class="op" type="range" min="0" max="100" value="60" id="op-slope">
+    <div class="lyr">
+      <input type="checkbox" id="chk-zones">
+      <span class="sw" style="background:#6d8bbf"></span>
+      <span class="nm">Datenverfügbarkeit Kantone</span>
+    </div>
+    <input class="op" type="range" min="0" max="100" value="55" id="op-zones">
+  </div>
+
+  <div class="sec">
+    <h2>Filter</h2>
+    <div class="lyr">
+      <input type="checkbox" id="f-live" checked>
+      <span class="nm">Tierhaltungs-/Grünland-Systeme ausschliessen</span>
+    </div>
+    <div class="ctrl">
+      <label>Max. Hangneigung <b><span id="v-slope">18</span>%</b></label>
+      <input type="range" min="0" max="50" value="18" id="s-slope">
+    </div>
+    <div class="ctrl">
+      <label>Max. Höhe ü. M. <b><span id="v-elev">900</span> m</b></label>
+      <input type="range" min="300" max="2000" step="50" value="900" id="s-elev">
+    </div>
+    <p class="note">Hangneigung/Höhe wirken auf Parzellen mit angereicherten Daten
+      (<code>slope</code>/<code>elev</code> aus dem ETL). Live-Parzellen tragen vorerst nur die Kultur-Bewertung.</p>
+  </div>
+
+  <div class="sec">
+    <h2>BFS-Choropleth (Kantone)</h2>
+    <div class="lyr">
+      <input type="checkbox" id="chk-choro">
+      <span class="sw" style="background:linear-gradient(90deg,#ffffcc,#238443)"></span>
+      <span class="nm">Kantone nach Kennzahl einfärben</span>
+    </div>
+    <div class="ctrl" style="margin-top:8px">
+      <label>Kennzahl</label>
+      <select id="choro-metric" style="width:100%;padding:6px;border-radius:8px;border:1px solid var(--line);font-size:13px">
+        <option value="bio_share">Bio-Betriebe (%)</option>
+        <option value="haupt_share">Haupterwerb (%)</option>
+        <option value="gruenland_share">Grünland-Anteil LN (%)</option>
+      </select>
+    </div>
+    <div id="choro-legend" class="note">Benötigt BFS-Daten (build_bfs.py oder Live-Abfrage).</div>
+  </div>
+
+  <div class="sec">
+    <h2>Hintergrundkarte</h2>
+    <div class="basemap">
+      <button data-base="grau" class="active">Karte grau</button>
+      <button data-base="image">Luftbild</button>
+    </div>
+  </div>
+  <div class="foot">Klick auf eine Parzelle → Details &amp; Score. Datenjahr 2025.</div>
+</div>
+
+<div class="legend" id="legend">
+  <h3>Eignungs-Score</h3>
+  <div class="ramp"></div>
+  <div class="ramp-lbl"><span>0 ungeeignet</span><span>100 ideal</span></div>
+  <div class="row" style="margin-top:8px"><span class="box" style="background:#9aa5b1"></span> ausgeschlossen (Tierhaltung/Grünland)</div>
+  <div class="row"><span class="box" style="background:#339966"></span> Boden: Acker gut geeignet</div>
+  <div class="row"><span class="box" style="background:#c0392b"></span> Hangneigung &gt; 30°</div>
+</div>
+
+<div class="bfs" id="bfs">
+  <h3>Regionaler Kontext · BFS</h3>
+  <div id="bfs-body" class="bfs-body"><span class="hint">Parzellen laden, um den Kanton zu ermitteln.</span></div>
+</div>
+
+<script>
+const CH_CENTER=[7.44,46.95], CH_BOUNDS=[[5.6,45.7],[10.7,47.9]];
+const OGC='https://geodienste.ch/db/lwb_nutzungsflaechen_v2_0_0/deu/ogcapi';
+const PARCEL_MIN_Z=13, LIMIT=3000;
+const WMTS=(l,fmt)=>`https://wmts.geo.admin.ch/1.0.0/${l}/default/current/3857/{z}/{x}/{y}.${fmt}`;
+const geoadminWMS=(l)=>`https://wms.geo.admin.ch/?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=${l}&STYLES=&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}`;
+const geodiensteWMS=(l)=>`https://wfs.geodienste.ch/lwb_nutzungsflaechen_v2_0_0/deu?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=${l}&STYLES=&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}`;
+
+/* ---------- crop classification (shared logic with the ETL) ---------- */
+// Primary key: lnf_code numeric ranges. Text overrides fodder within arable codes.
+function classify(props){
+  const code=parseInt(props.lnf_code,10);
+  const n=(props.nutzung||'').toLowerCase();
+  const fodder=['silomais','grünmais','gruenmais','silo- und','futterrübe','futterrube','futterrüben'].some(k=>n.includes(k));
+  // Grassland / pasture / meadow → livestock system
+  if((code>=600&&code<=699)||['wiese','weide','weiden','grünfläche','gruenflaeche','streue','sömmerung','soemmerung'].some(k=>n.includes(k)))
+    return {cat:'grassland',base:5,live:true};
+  // Open arable field crops → mixed-crop suitable (fodder maize etc. count as livestock)
+  if(code>=400&&code<=599){
+    if(fodder) return {cat:'fodder',base:20,live:true};
+    return {cat:'arable',base:85,live:false};
+  }
+  // Permanent crops (vines, orchards, berries, hops, nurseries)
+  if(code>=700&&code<=799) return {cat:'permanent',base:35,live:false};
+  // Everything else (hedges, forest, unproductive, water)
+  if(fodder) return {cat:'fodder',base:20,live:true};
+  return {cat:'other',base:12,live:false};
+}
+const CAT_DE={arable:'Ackerkultur',grassland:'Grünland/Weide',fodder:'Futterbau',permanent:'Dauerkultur',other:'Übrige'};
+
+/* ---------- score one parcel from current UI state ---------- */
+function ui(){return{
+  excludeLive:document.getElementById('f-live').checked,
+  maxSlope:+document.getElementById('s-slope').value,
+  maxElev:+document.getElementById('s-elev').value
+};}
+function scoreFeature(props){
+  const c=classify(props); const s=ui();
+  let excluded=false;
+  if(s.excludeLive && c.live) excluded=true;
+  // terrain thresholds apply only when ETL-enriched values exist
+  if(props.slope!=null && +props.slope>s.maxSlope) excluded=true;
+  if(props.elev!=null && +props.elev>s.maxElev) excluded=true;
+  let score=c.base;
+  // if ETL provided a soil suitability score (0-100), blend it in
+  if(props.soil_score!=null) score=Math.round(0.6*c.base+0.4*(+props.soil_score));
+  return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,cat:c.cat};
+}
+
+/* ---------- map ---------- */
+const style={version:8,sources:{
+    base_grau:{type:'raster',tiles:[WMTS('ch.swisstopo.pixelkarte-grau','jpeg')],tileSize:256,attribution:'© swisstopo'},
+    base_image:{type:'raster',tiles:[WMTS('ch.swisstopo.swissimage','jpeg')],tileSize:256,attribution:'© swisstopo'},
+    soil:{type:'raster',tiles:[geoadminWMS('ch.blw.bodeneignung-kulturland')],tileSize:256,attribution:'© BLW'},
+    slope:{type:'raster',tiles:[WMTS('ch.swisstopo.hangneigung-ueber_30','png')],tileSize:256,attribution:'© swisstopo'},
+    zones:{type:'raster',tiles:[geodiensteWMS('verfuegbarkeit_kantone')],tileSize:256,attribution:'© geodienste.ch'},
+    cantons:{type:'geojson',data:{type:'FeatureCollection',features:[]}},
+    parcels:{type:'geojson',data:{type:'FeatureCollection',features:[]}}
+  },
+  layers:[
+    {id:'base_grau',type:'raster',source:'base_grau'},
+    {id:'base_image',type:'raster',source:'base_image',layout:{visibility:'none'}},
+    {id:'soil',type:'raster',source:'soil',paint:{'raster-opacity':0.45}},
+    {id:'zones',type:'raster',source:'zones',paint:{'raster-opacity':0.55},layout:{visibility:'none'}},
+    {id:'cantons-fill',type:'fill',source:'cantons',layout:{visibility:'none'},paint:{'fill-opacity':0.6,'fill-color':'#dddddd'}},
+    {id:'cantons-line',type:'line',source:'cantons',layout:{visibility:'none'},paint:{'line-color':'#33404d','line-width':0.6,'line-opacity':0.5}},
+    {id:'slope',type:'raster',source:'slope',paint:{'raster-opacity':0.60}},
+    {id:'parcels-fill',type:'fill',source:'parcels',paint:{
+        'fill-color':['case',['==',['get','excluded'],true],'#9aa5b1',
+          ['interpolate',['linear'],['get','score'],0,'#c0392b',25,'#e67e22',50,'#f4d03f',75,'#7fb069',100,'#2f7d4f']],
+        'fill-opacity':0.78}},
+    {id:'parcels-line',type:'line',source:'parcels',paint:{'line-color':'#2b3642','line-width':0.35,'line-opacity':0.45}}
+  ]};
+
+const map=new maplibregl.Map({container:'map',style,center:CH_CENTER,zoom:8,maxBounds:CH_BOUNDS,minZoom:6.5,maxZoom:18});
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
+map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-right');
+
+const store=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const load=(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}};
+const setStatus=t=>document.getElementById('status').textContent=t;
+
+function bindLayer(chkId,opId,layerId){
+  const chk=document.getElementById(chkId),op=document.getElementById(opId);
+  const paintKey=(layerId==='parcels-fill')?'fill-opacity':'raster-opacity';
+  const apply=()=>{
+    if(!map.getLayer(layerId))return;
+    map.setLayoutProperty(layerId,'visibility',chk.checked?'visible':'none');
+    if(layerId==='parcels-fill'){map.setLayoutProperty('parcels-line','visibility',chk.checked?'visible':'none');}
+    map.setPaintProperty(layerId,paintKey,(+op.value)/100);
+    store('ck_'+layerId,chk.checked?'1':'0');store('op_'+layerId,op.value);
+  };
+  const ck=load('ck_'+layerId,null);if(ck!==null)chk.checked=ck==='1';
+  const ov=load('op_'+layerId,null);if(ov!==null)op.value=ov;
+  chk.addEventListener('change',apply);op.addEventListener('input',apply);
+  return apply;
+}
+
+/* ---------- parcel loading + scoring ---------- */
+let lastFC=null, ctrl=null, hasLocal=false;
+function rescore(){
+  if(!lastFC||!lastFC.features)return;
+  for(const f of lastFC.features){const r=scoreFeature(f.properties);
+    f.properties.score=r.score;f.properties.excluded=r.excluded;f.properties._catde=CAT_DE[r.cat]||r.cat;}
+  if(map.getSource('parcels'))map.getSource('parcels').setData(lastFC);
+}
+async function loadParcels(){
+  if(hasLocal)return;                       // an ETL file is loaded → don't overwrite with live view
+  if(!document.getElementById('chk-live').checked)return;
+  if(map.getZoom()<PARCEL_MIN_Z){setStatus('Zum Laden der Parzellen hineinzoomen (Stufe ≥ 13).');
+    lastFC={type:'FeatureCollection',features:[]};rescore();return;}
+  const b=map.getBounds();
+  const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(x=>x.toFixed(5)).join(',');
+  const url=`${OGC}/collections/nutzungsflaechen/items?f=json&limit=${LIMIT}&bbox=${bbox}`;
+  setStatus('Parzellen werden geladen …');
+  try{
+    if(ctrl)ctrl.abort();ctrl=new AbortController();
+    const r=await fetch(url,{signal:ctrl.signal});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const fc=await r.json();
+    // drop overlapping biodiversity features so base parcels aren't double-counted
+    fc.features=(fc.features||[]).filter(f=>String(f.properties&&f.properties.ist_ueberlagernd)!=='true');
+    lastFC=fc;rescore();
+    const n=(fc.features||[]).length;
+    const arable=(fc.features||[]).filter(f=>!f.properties.excluded).length;
+    setStatus(`${n} Parzellen · ${arable} geeignet${n>=LIMIT?' · Ansicht gekürzt, näher zoomen':''}`);
+    renderBFS();
+  }catch(e){
+    if(e.name==='AbortError')return;
+    setStatus('Live-Laden nicht möglich (CORS/offline). ETL-Datei parcels_scored.geojson verwenden.');
+    tryLocal();
+  }
+}
+async function tryLocal(){
+  try{const r=await fetch('parcels_scored.geojson');if(!r.ok)return false;
+    lastFC=await r.json();hasLocal=true;rescore();
+    setStatus(`${(lastFC.features||[]).length} Parzellen aus ETL-Datei geladen.`);
+    return true;
+  }catch(e){return false;}
+}
+
+map.on('load',async ()=>{
+  [['chk-score','op-score','parcels-fill'],['chk-soil','op-soil','soil'],
+   ['chk-slope','op-slope','slope'],['chk-zones','op-zones','zones']].forEach(a=>bindLayer(...a)());
+  Promise.all([loadBFS(),getCantonGeo()]).then(()=>{renderBFS();applyChoro();});
+  const gotLocal=await tryLocal();          // prefer an ETL file next to this page
+  if(!gotLocal){ loadParcels(); map.on('moveend',loadParcels); }  // else live-load on pan/zoom
+});
+
+/* ---------- BFS regional context (canton aggregates) ---------- */
+const CANTON_CODE=['CH','ZH','BE','LU','UR','SZ','OW','NW','GL','ZG','FR','SO','BS',
+  'BL','SH','AR','AI','SG','GR','AG','TG','TI','VD','VS','NE','GE','JU'];
+const CANTON_NAME={CH:'Schweiz',ZH:'Zürich',BE:'Bern',LU:'Luzern',UR:'Uri',SZ:'Schwyz',
+  OW:'Obwalden',NW:'Nidwalden',GL:'Glarus',ZG:'Zug',FR:'Freiburg',SO:'Solothurn',
+  BS:'Basel-Stadt',BL:'Basel-Landschaft',SH:'Schaffhausen',AR:'Appenzell A.Rh.',
+  AI:'Appenzell I.Rh.',SG:'St. Gallen',GR:'Graubünden',AG:'Aargau',TG:'Thurgau',
+  TI:'Tessin',VD:'Waadt',VS:'Wallis',NE:'Neuenburg',GE:'Genf',JU:'Jura'};
+let BFS=null;
+
+async function loadBFS(){
+  try{const r=await fetch('bfs_cantons.json');if(r.ok){BFS=await r.json();return;}}catch(e){}
+  // live fallback: organic share via BFS STAT-TAB POST (may be blocked by CORS)
+  try{
+    const body={query:[
+      {code:'Beobachtungseinheit',selection:{filter:'item',values:['0']}},
+      {code:'Kanton',selection:{filter:'all',values:['*']}},
+      {code:'Landwirtschaftliche Produktionszone',selection:{filter:'item',values:['0']}},
+      {code:'Betriebssystem',selection:{filter:'item',values:['0','1','2']}},
+      {code:'Betriebsform',selection:{filter:'item',values:['0']}},
+      {code:'Jahr',selection:{filter:'item',values:['0']}}],response:{format:'json-stat2'}};
+    const r=await fetch('https://www.pxweb.bfs.admin.ch/api/v1/de/px-x-0702000000_106/px-x-0702000000_106.px',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok)throw 0;
+    BFS=parsePx(await r.json());
+  }catch(e){BFS=null;}
+}
+function parsePx(js){ // Kanton × Betriebssystem → {code:{betriebe,bio_share,year}}
+  const dims=js.id,size=js.size,strides=dims.map(()=>1);
+  for(let i=dims.length-2;i>=0;i--)strides[i]=strides[i+1]*size[i+1];
+  const ki=dims.indexOf('Kanton'),si=dims.indexOf('Betriebssystem');
+  const sysCat=js.dimension['Betriebssystem'].category,kCat=js.dimension['Kanton'].category;
+  const sysOrder=Object.keys(sysCat.index).sort((a,b)=>sysCat.index[a]-sysCat.index[b]);
+  const kOrder=Object.keys(kCat.index).sort((a,b)=>kCat.index[a]-kCat.index[b]);
+  const out={};
+  kOrder.forEach((kk,ci)=>{
+    let total=null,bio=null;
+    sysOrder.forEach((sk,di)=>{
+      const pos=dims.map(()=>0);pos[ki]=ci;pos[si]=di;
+      const flat=pos.reduce((a,p,idx)=>a+p*strides[idx],0),v=js.value[flat],lbl=sysCat.label[sk];
+      if(lbl.includes('Total'))total=v;else if(lbl.includes('Bio'))bio=v;
+    });
+    out[CANTON_CODE[ci]||kk]={betriebe:total,bio_share:(bio&&total)?Math.round(1000*bio/total)/10:null,year:'2025'};
+  });
+  return out;
+}
+function dominantCanton(){
+  if(!lastFC||!lastFC.features||!lastFC.features.length)return null;
+  const c={};for(const f of lastFC.features){const k=(f.properties.kanton||'').toUpperCase();if(k)c[k]=(c[k]||0)+1;}
+  let best=null,n=-1;for(const k in c)if(c[k]>n){n=c[k];best=k;}return best;
+}
+const bar=p=>`<div class="bar"><span style="width:${Math.max(0,Math.min(100,p||0))}%"></span></div>`;
+
+/* ---------- BFS choropleth (all cantons) ---------- */
+const CANTON_GEO_URL='https://gist.githubusercontent.com/cmutel/a2e0f2e48278deeedf19846c39cee4da/raw';
+let CANTON_GEO=null;
+function matchCode(name){
+  let s=(name||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split('/')[0].trim();
+  const has=k=>s.includes(k);
+  if(has('basel-stadt')||has('basel-s'))return 'BS';
+  if(has('basel'))return 'BL';
+  if(has('ausserrhoden')||has('appenzell a'))return 'AR';
+  if(has('innerrhoden')||has('appenzell i'))return 'AI';
+  const m=[['zurich','ZH'],['bern','BE'],['berne','BE'],['luzern','LU'],['uri','UR'],['schwyz','SZ'],
+    ['obwalden','OW'],['nidwalden','NW'],['glarus','GL'],['zug','ZG'],['fribourg','FR'],['freiburg','FR'],
+    ['solothurn','SO'],['schaffhausen','SH'],['gallen','SG'],['graubunden','GR'],['grigioni','GR'],['grischun','GR'],
+    ['aargau','AG'],['thurgau','TG'],['ticino','TI'],['tessin','TI'],['vaud','VD'],['waadt','VD'],
+    ['valais','VS'],['wallis','VS'],['neuchatel','NE'],['neuenburg','NE'],['geneve','GE'],['genf','GE'],
+    ['geneva','GE'],['jura','JU']];
+  for(const [k,c] of m) if(has(k)) return c;
+  return null;
+}
+async function getCantonGeo(){
+  let fc=null;
+  try{const r=await fetch('cantons.geojson');if(r.ok)fc=await r.json();}catch(e){}
+  if(!fc){try{const r=await fetch(CANTON_GEO_URL);if(r.ok)fc=await r.json();}catch(e){}}
+  if(!fc)return;
+  for(const f of fc.features){f.properties=f.properties||{};
+    f.properties.KT=matchCode(f.properties.name||f.properties.NAME||f.properties.kanton||'');}
+  CANTON_GEO=fc;
+}
+const METRIC_LBL={bio_share:'Bio-Betriebe',haupt_share:'Haupterwerb',gruenland_share:'Grünland-Anteil LN'};
+function applyChoro(){
+  const on=document.getElementById('chk-choro').checked, vis=on?'visible':'none';
+  if(map.getLayer('cantons-fill')){map.setLayoutProperty('cantons-fill','visibility',vis);
+    map.setLayoutProperty('cantons-line','visibility',vis);}
+  const leg=document.getElementById('choro-legend');
+  if(!on){leg.textContent='';return;}
+  if(!CANTON_GEO){leg.textContent='Kantonsgrenzen konnten nicht geladen werden.';return;}
+  if(!BFS){leg.innerHTML='Benötigt BFS-Daten: <b>build_bfs.py</b> ausführen.';return;}
+  const metric=document.getElementById('choro-metric').value;
+  let min=Infinity,max=-Infinity;
+  for(const f of CANTON_GEO.features){
+    const v=(BFS[f.properties.KT]||{})[metric];
+    f.properties.choroval=(v==null)?null:+v;
+    if(v!=null){min=Math.min(min,v);max=Math.max(max,+v);}
+  }
+  if(!isFinite(min)){leg.innerHTML='Kennzahl nicht in BFS-Daten enthalten (ggf. build_bfs.py neu ausführen).';return;}
+  if(max<=min)max=min+1;
+  map.getSource('cantons').setData(CANTON_GEO);
+  map.setPaintProperty('cantons-fill','fill-color',
+    ['case',['==',['get','choroval'],null],'#e6e6e6',
+     ['interpolate',['linear'],['get','choroval'],min,'#ffffcc',(min+max)/2,'#78c679',max,'#238443']]);
+  leg.innerHTML=`<b>${METRIC_LBL[metric]}</b>: ${min}%–${max}%`+
+    `<div class="ramp" style="height:10px;background:linear-gradient(90deg,#ffffcc,#78c679,#238443)"></div>`;
+}
+document.getElementById('chk-choro').addEventListener('change',applyChoro);
+document.getElementById('choro-metric').addEventListener('change',applyChoro);
+map.on('click','cantons-fill',e=>{
+  if(map.getZoom()>=PARCEL_MIN_Z)return;           // parcels take over when zoomed in
+  const p=e.features[0].properties, d=(BFS||{})[p.KT];
+  let h=`<b>${p.name||p.KT||'Kanton'}</b>`;
+  if(d){if(d.bio_share!=null)h+=`<br>Bio: ${d.bio_share}%`;
+        if(d.haupt_share!=null)h+=`<br>Haupterwerb: ${d.haupt_share}%`;
+        if(d.gruenland_share!=null)h+=`<br>Grünland-Anteil LN: ${d.gruenland_share}%`;}
+  else h+='<br><span style="color:#5c6b7a">keine BFS-Daten</span>';
+  new maplibregl.Popup().setLngLat(e.lngLat).setHTML(h).addTo(map);
+});
+function renderBFS(){
+  const el=document.getElementById('bfs-body'),code=dominantCanton();
+  if(!code){el.innerHTML='<span class="hint">Parzellen laden, um den Kanton zu ermitteln.</span>';return;}
+  const name=CANTON_NAME[code]||code;
+  if(!BFS||!BFS[code]){
+    el.innerHTML=`<div class="k">${name}</div><span class="hint">BFS-Daten nicht geladen. <b>build_bfs.py</b> ausführen (erzeugt bfs_cantons.json) — Live-Abfrage evtl. durch CORS blockiert.</span>`;return;
+  }
+  const d=BFS[code];let h=`<div class="k">${name} <span style="color:#5c6b7a;font-weight:400">· ${d.year||''}</span></div>`;
+  if(d.betriebe!=null)h+=`<div class="r">Betriebe: <b>${Number(d.betriebe).toLocaleString('de-CH')}</b></div>`;
+  if(d.bio_share!=null)h+=`<div class="r">Bio-Betriebe: <b>${d.bio_share}%</b>${bar(d.bio_share)}</div>`;
+  if(d.haupt_share!=null)h+=`<div class="r">Haupterwerb: <b>${d.haupt_share}%</b>${bar(d.haupt_share)}</div>`;
+  if(d.gruenland_share!=null)h+=`<div class="r">Grünland-Anteil LN: <b>${d.gruenland_share}%</b>${bar(d.gruenland_share)}</div>`;
+  h+=`<div class="hint" style="margin-top:6px">Quelle: BFS STAT-TAB, kantonale Aggregate.</div>`;
+  el.innerHTML=h;
+}
+
+/* re-score (no refetch) when filters change */
+['f-live','s-slope','s-elev'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
+  const v=document.getElementById('v-slope'),e=document.getElementById('v-elev');
+  v.textContent=document.getElementById('s-slope').value;e.textContent=document.getElementById('s-elev').value;
+  rescore();
+  const n=(lastFC&&lastFC.features)?lastFC.features.length:0;
+  const ar=(lastFC&&lastFC.features)?lastFC.features.filter(f=>!f.properties.excluded).length:0;
+  if(n)setStatus(`${n} Parzellen · ${ar} geeignet`);
+}));
+document.getElementById('chk-live').addEventListener('change',loadParcels);
+
+/* ---------- presets ---------- */
+function setPreset(name){
+  const cfg=name==='mixed'
+    ?{score:[true,78],soil:[true,45],slope:[true,60],zones:[false,55]}
+    :{score:[false,78],soil:[false,45],slope:[false,60],zones:[false,55]};
+  const m={score:['chk-score','op-score','parcels-fill'],soil:['chk-soil','op-soil','soil'],
+           slope:['chk-slope','op-slope','slope'],zones:['chk-zones','op-zones','zones']};
+  for(const k in cfg){
+    document.getElementById(m[k][0]).checked=cfg[k][0];
+    document.getElementById(m[k][1]).value=cfg[k][1];
+    const L=m[k][2],vis=cfg[k][0]?'visible':'none',pk=(L==='parcels-fill')?'fill-opacity':'raster-opacity';
+    if(map.getLayer(L)){map.setLayoutProperty(L,'visibility',vis);map.setPaintProperty(L,pk,cfg[k][1]/100);
+      if(L==='parcels-fill')map.setLayoutProperty('parcels-line','visibility',vis);}
+  }
+}
+document.querySelectorAll('.preset button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.preset button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');setPreset(b.dataset.preset);
+}));
+
+/* basemap */
+document.querySelectorAll('.basemap button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.basemap button').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  const img=b.dataset.base==='image';
+  map.setLayoutProperty('base_grau','visibility',img?'none':'visible');
+  map.setLayoutProperty('base_image','visibility',img?'visible':'none');
+}));
+
+/* thresholds init + persist */
+function initTh(id,valId){const s=document.getElementById(id),v=document.getElementById(valId);
+  const sv=load('th_'+id,null);if(sv!==null)s.value=sv;v.textContent=s.value;
+  s.addEventListener('input',()=>store('th_'+id,s.value));}
+initTh('s-slope','v-slope');initTh('s-elev','v-elev');
+
+/* panel toggle (mobile) */
+const panel=document.getElementById('panel'),tgl=document.getElementById('togglePanel');
+tgl.addEventListener('click',()=>panel.style.display=panel.style.display==='none'?'block':'none');
+function respond(){tgl.style.display=window.innerWidth<640?'block':'none';if(window.innerWidth>=640)panel.style.display='block';}
+window.addEventListener('resize',respond);respond();
+
+/* parcel popup */
+map.on('click','parcels-fill',e=>{
+  const p=e.features[0].properties;
+  new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
+    `<b>${p.nutzung||'Nutzung ?'}</b><br>`+
+    `Kategorie: ${p._catde||'—'}<br>`+
+    `LNF-Code: ${p.lnf_code||'—'} · ${p.flaeche_m2?(+p.flaeche_m2/10000).toFixed(2)+' ha':''}<br>`+
+    `Kanton: ${p.kanton||'—'} · Jahr: ${p.bezugsjahr||'—'}<br>`+
+    `<b style="color:${p.excluded?'#9aa5b1':'#2f7d4f'}">Eignungs-Score: ${p.excluded?'ausgeschlossen':p.score}</b>`
+  ).addTo(map);
+});
+map.on('mouseenter','parcels-fill',()=>map.getCanvas().style.cursor='pointer');
+map.on('mouseleave','parcels-fill',()=>map.getCanvas().style.cursor='');
+</script>
+</body>
+</html>

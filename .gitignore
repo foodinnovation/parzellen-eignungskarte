@@ -1,0 +1,8 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Baked data artifacts (regenerate with build scripts)
+parcels_scored.geojson
+bfs_cantons.json
+cantons.geojson
