@@ -37,8 +37,7 @@ Der Score ist ein transparentes, gewichtetes Mittel aus bis zu fünf Faktoren �
 alle Gewichte im Panel einstellbar. Kultur, Diversität und Klima sind live überall
 verfügbar; **Boden und Terrain** holt die Karte auf **Klick** pro Parzelle direkt
 von geo.admin (oder per Knopf «Sichtbare Parzellen anreichern» für den ganzen
-Ausschnitt). Ein Klick auf «Demo-Kanton (AG) laden» zeigt einen vorab gebackenen,
-voll angereicherten Kanton.
+Ausschnitt).
 
 Bedienung: Preset «Mischkultur-Eignung», Score-Gewichts-Regler, weiche
 Hang-/Höhen-Schwellen, Kontext-Raster (Boden, Hangneigung) und ein
@@ -57,7 +56,6 @@ für den produktiven Einsatz.
 | `parzellen-eignungskarte.html` | Die Karte. Das ist alles, was Betrachter brauchen. | alle |
 | `cantons.geojson` | Kantonsgrenzen für die BFS-Choropleth (gebündelt). | — |
 | `bfs_cantons.json` | BFS-Kantonskontext: Bio-Anteil, Haupterwerb, Grünland (gebündelt, Jahr 2025). | — |
-| `parcels_scored.geojson` | Demo-Parzellen (AG, Seetal/Aare-Ebene, 500 Stück) mit Boden/Hang/Höhe – per Knopf «Demo-Kanton laden» in der Karte abrufbar. | — |
 | `climate.json` | Grobes Wachstumsgradtage-Raster (GDD) der Schweiz für den Klima-Faktor (gebündelt). | — |
 | `build_canton.py` | Optional: bäckt einen Kanton in eine statische GeoJSON (mit Boden/Hangneigung). | techn. Person |
 | `build_bfs.py` | Optional: erzeugt `bfs_cantons.json` neu (z.B. für ein anderes Jahr). | techn. Person |
@@ -65,11 +63,13 @@ für den produktiven Einsatz.
 | `farm-parcel-map-build-plan.md` | Konzept & Architektur, Roadmap. | Doku |
 | `phase0-spike-findings.md` | Datenverfügbarkeit & Machbarkeit. | Doku |
 
-`cantons.geojson`, `bfs_cantons.json` und die Demo-`parcels_scored.geojson` sind
-**bewusst mitgeliefert**, damit Choropleth und angereicherter Parzellen-Score ohne
-externe Quellen und ohne CORS-Probleme funktionieren. `parcels_scored.geojson`
-lässt sich pro Kanton mit `build_canton.py --geoadmin` neu erzeugen; die Karte
-findet sie automatisch, wenn sie neben der `.html` liegt (sonst Live-Modus).
+`cantons.geojson`, `bfs_cantons.json` und `climate.json` sind **bewusst mitgeliefert**
+(nationaler Kontext, klein), damit Choropleth und Klima-Faktor ohne externe Quellen
+und ohne CORS-Probleme funktionieren. Die gehostete Karte ist ansonsten **live**:
+Boden/Terrain kommen pro Klick bzw. per «Sichtbare Parzellen anreichern». Wer einen
+ganzen Kanton vorbacken will, erzeugt mit `build_canton.py --geoadmin` eine
+`parcels_scored.geojson` und legt sie neben die `.html` — die Karte lädt sie dann
+automatisch (statt Live). Diese Datei wird nicht ins Repo eingecheckt.
 
 > **Hinweis:** Die Karte per Doppelklick zu öffnen (`file://`) funktioniert nur
 > eingeschränkt — der Browser blockiert das Nachladen der Daten. Die Karte muss

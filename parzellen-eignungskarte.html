@@ -108,7 +108,6 @@
       <span class="nm">Live aus geodienste.ch laden (beim Zoomen)</span>
     </div>
     <button id="btn-enrich" class="act">Sichtbare Parzellen anreichern (Boden + Terrain)</button>
-    <button id="btn-demo" class="act">Angereicherten Demo-Kanton (AG) laden</button>
   </div>
 
   <div class="sec">
@@ -452,14 +451,17 @@ async function loadParcels(){
     renderBFS();
   }catch(e){
     if(e.name==='AbortError')return;
-    setStatus('Live-Laden nicht möglich (CORS/offline). Versuche Demo-Datei …');
-    tryLocal().then(ok=>{ if(ok)updateDataButtons(); });
+    setStatus('Live-Laden nicht möglich (CORS/offline). Versuche lokale ETL-Datei …');
+    tryLocal();
   }
 }
 async function tryLocal(){
   try{const r=await fetch('parcels_scored.geojson');if(!r.ok)return false;
     lastFC=await r.json();hasLocal=true;annotate(lastFC);rescore();
-    setStatus(`${(lastFC.features||[]).length} Parzellen aus ETL-Datei geladen.`);
+    setStatus(`${(lastFC.features||[]).length} Parzellen aus lokaler ETL-Datei geladen.`);
+    const be=document.getElementById('btn-enrich');if(be)be.style.display='none';   // schon angereichert
+    const bb=fcBounds(lastFC);if(bb)map.fitBounds(bb,{padding:30,maxZoom:15});
+    renderBFS();
     return true;
   }catch(e){return false;}
 }
@@ -469,8 +471,8 @@ map.on('load',async ()=>{
    ['chk-slope','op-slope','slope'],['chk-zones','op-zones','zones']].forEach(a=>bindLayer(...a)());
   choroData=Promise.all([loadBFS(),getCantonGeo()]).then(()=>{choroTried=true;renderBFS();applyChoro();});
   await loadClimate();                      // climate grid ready before parcels are annotated
-  loadParcels(); map.on('moveend',loadParcels);   // live nationwide by default (whole CH)
-  updateDataButtons();
+  const gotLocal=await tryLocal();          // auto-load a local ETL file if one sits next to the page
+  if(!gotLocal){ loadParcels(); map.on('moveend',loadParcels); }   // else live nationwide (whole CH)
 });
 
 /* ---------- BFS regional context (canton aggregates) ---------- */
@@ -667,26 +669,12 @@ async function enrichVisible(){                   // batch-enrich parcels in the
   rescore(); setStatus(`${todo.length} Parzellen angereichert (Boden + Terrain).`);
 }
 
-/* ---------- data source: live (whole CH) ↔ baked demo canton ---------- */
-function updateDataButtons(){
-  const bd=document.getElementById('btn-demo'), be=document.getElementById('btn-enrich');
-  if(!bd) return;
-  if(hasLocal){ bd.textContent='Zurück zu Live (ganze CH)'; if(be)be.style.display='none'; }
-  else { bd.textContent='Angereicherten Demo-Kanton (AG) laden'; if(be)be.style.display=''; }
-}
-async function loadDemo(){
-  setStatus('Demo-Kanton wird geladen …');
-  const ok=await tryLocal();                       // sets hasLocal, loads parcels_scored.geojson
-  if(!ok){ setStatus('Demo-Datei nicht gefunden (parcels_scored.geojson).'); return; }
-  map.off('moveend',loadParcels); if(ctrl)ctrl.abort();
-  map.fitBounds([[8.10,47.36],[8.26,47.43]],{padding:30,maxZoom:14});
-  updateDataButtons();
-}
-function backToLive(){
-  hasLocal=false; lastFC={type:'FeatureCollection',features:[]};
-  if(map.getSource('parcels'))map.getSource('parcels').setData(lastFC);
-  map.on('moveend',loadParcels); loadParcels();
-  updateDataButtons();
+/* ---------- fit the view to a locally-provided ETL file ---------- */
+function fcBounds(fc){
+  let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity;
+  const scan=p=>{ if(typeof p[0]==='number'){a=Math.min(a,p[0]);c=Math.max(c,p[0]);b=Math.min(b,p[1]);d=Math.max(d,p[1]);} else p.forEach(scan); };
+  for(const f of (fc.features||[])) if(f.geometry) scan(f.geometry.coordinates);
+  return isFinite(a)?[[a,b],[c,d]]:null;
 }
 const METRIC_LBL={bio_share:'Bio-Betriebe',haupt_share:'Haupterwerb',gruenland_share:'Grünland-Anteil LN'};
 function applyChoro(){
@@ -760,7 +748,6 @@ function renderBFS(){
 }));
 document.getElementById('chk-live').addEventListener('change',loadParcels);
 document.getElementById('btn-enrich').addEventListener('click',enrichVisible);
-document.getElementById('btn-demo').addEventListener('click',()=>{ hasLocal?backToLive():loadDemo(); });
 
 // score weights → live re-score
 ['w-crop','w-soil','w-terrain','w-div','w-clim'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
