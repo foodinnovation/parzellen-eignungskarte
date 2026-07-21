@@ -379,7 +379,7 @@ async function tryLocal(){
 map.on('load',async ()=>{
   [['chk-score','op-score','parcels-fill'],['chk-soil','op-soil','soil'],
    ['chk-slope','op-slope','slope'],['chk-zones','op-zones','zones']].forEach(a=>bindLayer(...a)());
-  Promise.all([loadBFS(),getCantonGeo()]).then(()=>{renderBFS();applyChoro();});
+  choroData=Promise.all([loadBFS(),getCantonGeo()]).then(()=>{choroTried=true;renderBFS();applyChoro();});
   const gotLocal=await tryLocal();          // prefer an ETL file next to this page
   if(!gotLocal){ loadParcels(); map.on('moveend',loadParcels); }  // else live-load on pan/zoom
 });
@@ -438,7 +438,7 @@ function dominantCanton(){
 const bar=p=>`<div class="bar"><span style="width:${Math.max(0,Math.min(100,p||0))}%"></span></div>`;
 
 /* ---------- BFS choropleth (all cantons) ---------- */
-let CANTON_GEO=null;
+let CANTON_GEO=null, choroData=null, choroTried=false;
 function matchCode(name){
   let s=(name||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split('/')[0].trim();
   const has=k=>s.includes(k);
@@ -471,8 +471,15 @@ function applyChoro(){
     map.setLayoutProperty('cantons-line','visibility',vis);}
   const leg=document.getElementById('choro-legend');
   if(!on){leg.textContent='';return;}
-  if(!CANTON_GEO){leg.textContent='Kantonsgrenzen konnten nicht geladen werden.';return;}
-  if(!BFS){leg.innerHTML='Benötigt BFS-Daten: <b>build_bfs.py</b> ausführen.';return;}
+  if(!CANTON_GEO||!BFS){
+    if(!choroTried){                         // Daten laden noch → Hinweis + einmaliger Retry nach dem Laden
+      leg.textContent='Kantonsdaten werden geladen …';
+      if(choroData) choroData.then(()=>{ if(document.getElementById('chk-choro').checked) applyChoro(); });
+      return;
+    }
+    if(!CANTON_GEO){leg.textContent='Kantonsgrenzen konnten nicht geladen werden.';return;}
+    leg.innerHTML='Benötigt BFS-Daten: <b>build_bfs.py</b> ausführen.';return;
+  }
   const metric=document.getElementById('choro-metric').value;
   let min=Infinity,max=-Infinity;
   for(const f of CANTON_GEO.features){
