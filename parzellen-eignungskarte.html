@@ -438,7 +438,6 @@ function dominantCanton(){
 const bar=p=>`<div class="bar"><span style="width:${Math.max(0,Math.min(100,p||0))}%"></span></div>`;
 
 /* ---------- BFS choropleth (all cantons) ---------- */
-const CANTON_GEO_URL='https://gist.githubusercontent.com/cmutel/a2e0f2e48278deeedf19846c39cee4da/raw';
 let CANTON_GEO=null;
 function matchCode(name){
   let s=(name||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').split('/')[0].trim();
@@ -459,10 +458,9 @@ function matchCode(name){
 async function getCantonGeo(){
   let fc=null;
   try{const r=await fetch('cantons.geojson');if(r.ok)fc=await r.json();}catch(e){}
-  if(!fc){try{const r=await fetch(CANTON_GEO_URL);if(r.ok)fc=await r.json();}catch(e){}}
-  if(!fc)return;
+  if(!fc||!fc.features)return;               // gebündelte Kantonsgeometrie (lokal, keine externe Quelle)
   for(const f of fc.features){f.properties=f.properties||{};
-    f.properties.KT=matchCode(f.properties.name||f.properties.NAME||f.properties.kanton||'');}
+    f.properties.KT=f.properties.id||matchCode(f.properties.name||f.properties.NAME||f.properties.kanton||'');}
   CANTON_GEO=fc;
 }
 const METRIC_LBL={bio_share:'Bio-Betriebe',haupt_share:'Haupterwerb',gruenland_share:'Grünland-Anteil LN'};
