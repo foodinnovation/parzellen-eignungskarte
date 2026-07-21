@@ -120,9 +120,18 @@
       <label>Terrain (Hang/Höhe) <b><span id="v-wterrain">70</span></b></label>
       <input type="range" min="0" max="100" value="70" id="w-terrain">
     </div>
+    <div class="ctrl">
+      <label>Diversität (Umfeld) <b><span id="v-wdiv">30</span></b></label>
+      <input type="range" min="0" max="100" value="30" id="w-div">
+    </div>
+    <div class="ctrl">
+      <label>Klima (Wachstum) <b><span id="v-wclim">50</span></b></label>
+      <input type="range" min="0" max="100" value="50" id="w-clim">
+    </div>
     <p class="note">Relative Gewichte im 0–100-Score (gewichtetes Mittel über die
-      vorhandenen Faktoren). Boden- und Terrain-Gewicht wirken auf Parzellen mit
-      angereicherten Daten (<code>--geoadmin</code>/ETL); Diversitäts- und Klima-Gewichte folgen.</p>
+      vorhandenen Faktoren). Boden/Terrain wirken auf angereicherte Parzellen
+      (<code>--geoadmin</code>/ETL); Diversität = Kulturvielfalt im ~500-m-Umfeld;
+      Klima = Wachstumsgradtage (<code>climate.json</code>, gilt auch live).</p>
   </div>
 
   <div class="sec">
@@ -311,8 +320,9 @@ function ui(){return{
 // crop affinity alone. Terrain/diversity/climate weights are added in later phases.
 function weights(){
   const g=id=>{const el=document.getElementById(id);return el?+el.value:null;};
-  const crop=g('w-crop'), soil=g('w-soil'), terrain=g('w-terrain');   // 0 is valid — fall back only when the slider is absent
-  return {crop:crop==null?100:crop, soil:soil==null?0:soil, terrain:terrain==null?0:terrain};
+  const crop=g('w-crop'), soil=g('w-soil'), terrain=g('w-terrain'), div=g('w-div'), clim=g('w-clim');
+  return {crop:crop==null?100:crop, soil:soil==null?0:soil, terrain:terrain==null?0:terrain,
+          div:div==null?0:div, clim:clim==null?0:clim};   // 0 is valid — fall back only when the slider is absent
 }
 // smooth 100→0 ramp: full score up to (thr-width), zero beyond (thr+width)
 function softBelow(v,thr,width){
@@ -337,6 +347,8 @@ function scoreFeature(props){
   const parts=[{key:'Kultur',v:c.base,w:w.crop}];
   if(props.soil_score!=null) parts.push({key:'Boden',v:+props.soil_score,w:w.soil});
   if(terrain!=null) parts.push({key:'Terrain',v:terrain,w:w.terrain});
+  if(props._div!=null)  parts.push({key:'Diversität',v:+props._div, w:w.div});   // Umfeld-Kulturvielfalt (annotate)
+  if(props._clim!=null) parts.push({key:'Klima',     v:+props._clim,w:w.clim});   // GDD-Raster (climate.json)
   const wsum=parts.reduce((a,p)=>a+p.w,0)||1;
   const score=parts.reduce((a,p)=>a+p.v*p.w,0)/wsum;
   return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,cat:c.cat,parts};
@@ -425,7 +437,7 @@ async function loadParcels(){
     const fc=await r.json();
     // drop overlapping biodiversity features so base parcels aren't double-counted
     fc.features=(fc.features||[]).filter(f=>String(f.properties&&f.properties.ist_ueberlagernd)!=='true');
-    lastFC=fc;rescore();
+    lastFC=fc;annotate(lastFC);rescore();
     const n=(fc.features||[]).length;
     const arable=(fc.features||[]).filter(f=>!f.properties.excluded).length;
     setStatus(`${n} Parzellen · ${arable} geeignet${n>=LIMIT?' · Ansicht gekürzt, näher zoomen':''}`);
@@ -438,7 +450,7 @@ async function loadParcels(){
 }
 async function tryLocal(){
   try{const r=await fetch('parcels_scored.geojson');if(!r.ok)return false;
-    lastFC=await r.json();hasLocal=true;rescore();
+    lastFC=await r.json();hasLocal=true;annotate(lastFC);rescore();
     setStatus(`${(lastFC.features||[]).length} Parzellen aus ETL-Datei geladen.`);
     return true;
   }catch(e){return false;}
@@ -448,6 +460,7 @@ map.on('load',async ()=>{
   [['chk-score','op-score','parcels-fill'],['chk-soil','op-soil','soil'],
    ['chk-slope','op-slope','slope'],['chk-zones','op-zones','zones']].forEach(a=>bindLayer(...a)());
   choroData=Promise.all([loadBFS(),getCantonGeo()]).then(()=>{choroTried=true;renderBFS();applyChoro();});
+  await loadClimate();                      // climate grid ready before parcels are annotated
   const gotLocal=await tryLocal();          // prefer an ETL file next to this page
   if(!gotLocal){ loadParcels(); map.on('moveend',loadParcels); }  // else live-load on pan/zoom
 });
@@ -531,6 +544,56 @@ async function getCantonGeo(){
     f.properties.KT=f.properties.id||matchCode(f.properties.name||f.properties.NAME||f.properties.kanton||'');}
   CANTON_GEO=fc;
 }
+
+/* ---------- Phase 3: climate grid + neighbourhood diversity ---------- */
+let CLIMATE=null;
+async function loadClimate(){ try{const r=await fetch('climate.json'); if(r.ok) CLIMATE=await r.json();}catch(e){} }
+
+function centroidLonLat(geom){
+  if(!geom) return null;
+  const ring = geom.type==='Polygon' ? geom.coordinates[0]
+             : geom.type==='MultiPolygon' ? geom.coordinates.reduce((a,p)=>(p[0]&&p[0].length>((a&&a.length)||0))?p[0]:a,null)
+             : null;
+  if(!ring||!ring.length) return null;
+  let x=0,y=0; for(const c of ring){x+=c[0];y+=c[1];} return [x/ring.length,y/ring.length];
+}
+function climateAt(lon,lat){
+  const g=CLIMATE; if(!g) return null;
+  let i=Math.round((lon-g.lon0)/g.dlon), j=Math.round((lat-g.lat0)/g.dlat);
+  i=Math.max(0,Math.min(g.nlon-1,i)); j=Math.max(0,Math.min(g.nlat-1,j));
+  const v=g.score[j*g.nlon+i]; return (v==null)?null:v;
+}
+// Attach _clim (nearest climate cell) and _div (Shannon evenness of crop
+// categories within ~500 m) to every parcel. Runs once per FeatureCollection,
+// so the weight sliders stay cheap (rescore only reads these).
+function annotate(fc){
+  if(!fc||!fc.features) return;
+  const feats=fc.features, cen=new Array(feats.length);
+  for(let k=0;k<feats.length;k++){
+    const c=centroidLonLat(feats[k].geometry); cen[k]=c;
+    feats[k].properties._clim = c?climateAt(c[0],c[1]):null;
+  }
+  const R=500, cellLat=R/111000, cellLon=R/75700;      // ~47°N
+  const grid=new Map(), key=(ix,iy)=>ix+','+iy;
+  for(let k=0;k<feats.length;k++){ const c=cen[k]; if(!c) continue;
+    const kk=key(Math.floor(c[0]/cellLon),Math.floor(c[1]/cellLat));
+    (grid.get(kk)||grid.set(kk,[]).get(kk)).push(k); }
+  for(let k=0;k<feats.length;k++){
+    const c=cen[k]; if(!c){feats[k].properties._div=null; continue;}
+    const ix=Math.floor(c[0]/cellLon), iy=Math.floor(c[1]/cellLat), counts={}; let n=0;
+    for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){
+      const arr=grid.get(key(ix+dx,iy+dy)); if(!arr) continue;
+      for(const j of arr){ const cc=cen[j]; if(!cc) continue;
+        const dl=(cc[0]-c[0])*75700, db=(cc[1]-c[1])*111000;
+        if(dl*dl+db*db > R*R) continue;
+        const cat=classify(feats[j].properties).cat; counts[cat]=(counts[cat]||0)+1; n++; }
+    }
+    const ks=Object.keys(counts);
+    if(n<3||ks.length<2){ feats[k].properties._div=0; continue; }
+    let H=0; for(const kc of ks){ const p=counts[kc]/n; H-=p*Math.log(p); }
+    feats[k].properties._div=Math.round(100*H/Math.log(ks.length));
+  }
+}
 const METRIC_LBL={bio_share:'Bio-Betriebe',haupt_share:'Haupterwerb',gruenland_share:'Grünland-Anteil LN'};
 function applyChoro(){
   syncLegend();
@@ -604,10 +667,12 @@ function renderBFS(){
 document.getElementById('chk-live').addEventListener('change',loadParcels);
 
 // score weights → live re-score
-['w-crop','w-soil','w-terrain'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
+['w-crop','w-soil','w-terrain','w-div','w-clim'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
   document.getElementById('v-wcrop').textContent=document.getElementById('w-crop').value;
   document.getElementById('v-wsoil').textContent=document.getElementById('w-soil').value;
   document.getElementById('v-wterrain').textContent=document.getElementById('w-terrain').value;
+  document.getElementById('v-wdiv').textContent=document.getElementById('w-div').value;
+  document.getElementById('v-wclim').textContent=document.getElementById('w-clim').value;
   rescore();
 }));
 

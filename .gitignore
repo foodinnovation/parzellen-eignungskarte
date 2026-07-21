@@ -6,4 +6,5 @@ __pycache__/
 #   bfs_cantons.json     — BFS canton context for the choropleth
 #   cantons.geojson      — canton boundaries for the choropleth
 #   parcels_scored.geojson — demo canton (AG, Seetal/Aare plain) with soil+terrain
+#   climate.json           — coarse GDD grid for the climate factor
 # Nothing to ignore for now.

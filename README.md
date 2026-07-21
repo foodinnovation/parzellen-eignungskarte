@@ -50,8 +50,10 @@ für den produktiven Einsatz.
 | `cantons.geojson` | Kantonsgrenzen für die BFS-Choropleth (gebündelt). | — |
 | `bfs_cantons.json` | BFS-Kantonskontext: Bio-Anteil, Haupterwerb, Grünland (gebündelt, Jahr 2025). | — |
 | `parcels_scored.geojson` | Demo-Parzellen (AG, Seetal/Aare-Ebene, 500 Stück) mit Boden/Hang/Höhe – zeigt den angereicherten Score. | — |
+| `climate.json` | Grobes Wachstumsgradtage-Raster (GDD) der Schweiz für den Klima-Faktor (gebündelt). | — |
 | `build_canton.py` | Optional: bäckt einen Kanton in eine statische GeoJSON (mit Boden/Hangneigung). | techn. Person |
 | `build_bfs.py` | Optional: erzeugt `bfs_cantons.json` neu (z.B. für ein anderes Jahr). | techn. Person |
+| `build_climate.py` | Optional: erzeugt `climate.json` neu (Open-Meteo, GDD-Raster). | techn. Person |
 | `farm-parcel-map-build-plan.md` | Konzept & Architektur, Roadmap. | Doku |
 | `phase0-spike-findings.md` | Datenverfügbarkeit & Machbarkeit. | Doku |
 
@@ -91,6 +93,9 @@ Voraussetzung: Python 3 auf dem eigenen Rechner (dort ist der Netzzugriff frei).
 ```bash
 # BFS-Kantonszahlen (einmal für die ganze Schweiz)
 python3 build_bfs.py                       # → bfs_cantons.json
+
+# Klima-Raster (Wachstumsgradtage, Open-Meteo, ganze Schweiz)
+python3 build_climate.py                   # → climate.json
 
 # ein Kanton, Kultur-Score (schnell, ohne Zusatz-Downloads)
 python3 build_canton.py --canton AG        # → parcels_scored.geojson
