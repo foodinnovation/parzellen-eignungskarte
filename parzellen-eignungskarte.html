@@ -47,7 +47,7 @@
   .legend h3{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
   .legend .row{display:flex;align-items:center;gap:8px;font-size:12px;margin:4px 0;line-height:1.25}
   .legend .box{width:14px;height:14px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.28)}
-  .ramp{height:12px;border-radius:6px;margin:6px 0 4px;background:linear-gradient(90deg,#c0392b,#e67e22,#f4d03f,#7fb069,#2f7d4f)}
+  .ramp{height:12px;border-radius:6px;margin:6px 0 4px;background:linear-gradient(90deg,#d7f0ee,#7fcdc7,#2a9d8f,#1a6b62,#0b3d38)}
   .ramp-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
   .legend .lg-note{font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
   .legend .lg-sec{border-top:1px solid var(--line);margin-top:9px;padding-top:8px}
@@ -99,7 +99,7 @@
     <h2>Bewertungs-Ebene</h2>
     <div class="lyr">
       <input type="checkbox" id="chk-score" checked>
-      <span class="sw" style="background:linear-gradient(90deg,#c0392b,#e67e22,#f4d03f,#7fb069,#2f7d4f)"></span>
+      <span class="sw" style="background:linear-gradient(90deg,#d7f0ee,#7fcdc7,#2a9d8f,#1a6b62,#0b3d38)"></span>
       <span class="nm">Eignungs-Score (Parzellen)</span>
     </div>
     <input class="op" type="range" min="0" max="100" value="78" id="op-score">
@@ -209,8 +209,8 @@
 </div>
 
 <div class="legend" id="legend">
-  <div class="lg-note">Jede Ebene hat ihre <b>eigene</b> Skala. Achtung: Beim <b>Boden</b> ist Rot = <b>gut</b>,
-    beim Eignungs-Score Rot = schlecht.</div>
+  <div class="lg-note">Jede Ebene hat ihre <b>eigene</b> Skala. Der Eignungs-Score ist bewusst <b>türkis</b>
+    gehalten, damit er sich nicht mit den Kontext-Rastern (Boden/Hangneigung) überschneidet.</div>
 
   <div class="lg-sec" data-lg="score">
     <h3>Eignungs-Score · Parzellen</h3>
@@ -382,7 +382,7 @@ const style={version:8,sources:{
     {id:'slope',type:'raster',source:'slope',paint:{'raster-opacity':0.60}},
     {id:'parcels-fill',type:'fill',source:'parcels',paint:{
         'fill-color':['case',['==',['get','excluded'],true],'#9aa5b1',
-          ['interpolate',['linear'],['get','score'],0,'#c0392b',25,'#e67e22',50,'#f4d03f',75,'#7fb069',100,'#2f7d4f']],
+          ['interpolate',['linear'],['get','score'],0,'#d7f0ee',25,'#7fcdc7',50,'#2a9d8f',75,'#1a6b62',100,'#0b3d38']],
         'fill-opacity':0.78}},
     {id:'parcels-line',type:'line',source:'parcels',paint:{'line-color':'#2b3642','line-width':0.35,'line-opacity':0.45}}
   ]};
@@ -823,7 +823,7 @@ function parcelPopupHTML(p,note){
     `<hr style="border:none;border-top:1px solid #e2e8ef;margin:6px 0">`+
     `<div style="font-size:11.5px;color:#5c6b7a">Faktoren:<br>${rows}`+
       (note?`<br><span style="color:#2f7d4f">${note}</span>`:'')+`</div>`+
-    `<b style="color:${r.excluded?'#9aa5b1':'#2f7d4f'}">Eignungs-Score: ${r.excluded?'ausgeschlossen (Tierhaltung/Grünland)':r.score}</b>`;
+    `<b style="color:${r.excluded?'#9aa5b1':'#1a6b62'}">Eignungs-Score: ${r.excluded?'ausgeschlossen (Tierhaltung/Grünland)':r.score}</b>`;
 }
 map.on('click','parcels-fill',async e=>{
   const fid=e.features[0].id;
