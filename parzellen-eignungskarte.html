@@ -182,6 +182,16 @@
     <p class="note">Weiche Schwellen: der Terrain-Faktor sinkt rund um diese Werte von 100 auf 0
       (kein harter Ausschnitt). Wirkt auf Parzellen mit <code>slope</code>/<code>elev</code>
       (<code>--geoadmin</code>/ETL); reine Live-Parzellen tragen nur die Kultur-Bewertung.</p>
+    <div class="lyr" style="margin-top:10px">
+      <input type="checkbox" id="f-mill">
+      <span class="nm">Nur nahe einer Getreidemühle</span>
+    </div>
+    <div class="ctrl">
+      <label>Max. Distanz zur Mühle <b><span id="v-millkm">10</span> km</b></label>
+      <input type="range" min="1" max="30" value="10" id="s-millkm">
+    </div>
+    <p class="note">Blendet Parzellen aus, deren Zentrum weiter als die gewählte Distanz zur
+      nächsten Getreidemühle liegt (Luftlinie). Zeigt so <b>geeignete <i>und</i> mühlennahe</b> Flächen.</p>
   </div>
 
   <div class="sec">
@@ -221,7 +231,7 @@
     <div class="ramp"></div>
     <div class="ramp-lbl"><span>0</span><span>50</span><span>100</span></div>
     <div class="ramp-lbl"><span>ungeeignet</span><span>mässig</span><span>ideal</span></div>
-    <div class="row" style="margin-top:6px"><span class="box" style="background:#9aa5b1"></span> ausgeschlossen (Tierhaltung/Grünland)</div>
+    <div class="row" style="margin-top:6px"><span class="box" style="background:#9aa5b1"></span> ausgeschlossen / gefiltert (Vieh, Mühlendistanz)</div>
     <div class="note" style="margin-top:4px">Vektor-Parzellen · sichtbar ab Zoomstufe 13.</div>
   </div>
 
@@ -331,7 +341,9 @@ const CAT_DE={legume:'Leguminose (N-Fixierer)',diverse:'Acker – divers',cereal
 function ui(){return{
   excludeLive:document.getElementById('f-live').checked,
   maxSlope:+document.getElementById('s-slope').value,
-  maxElev:+document.getElementById('s-elev').value
+  maxElev:+document.getElementById('s-elev').value,
+  millOn:document.getElementById('f-mill').checked,
+  millKm:+document.getElementById('s-millkm').value
 };}
 // User-adjustable score weights (0-100). Factors without data for a parcel
 // are simply left out of the weighted average, so live-only parcels score on
@@ -350,8 +362,10 @@ function softBelow(v,thr,width){
 }
 function scoreFeature(props){
   const c=classify(props); const s=ui(); const w=weights();
-  let excluded=false;
-  if(s.excludeLive && c.live) excluded=true;         // only livestock/grassland is a hard exclusion
+  let excluded=false, reason=null;
+  if(s.excludeLive && c.live){ excluded=true; reason='Tierhaltung/Grünland'; }   // hard exclusion
+  // mill-proximity filter: grey out parcels farther than the chosen radius from any mill
+  if(s.millOn && props._millkm!=null && props._millkm>s.millKm){ excluded=true; if(!reason)reason='>'+s.millKm+' km von Mühle'; }
   // terrain as a SOFT factor (no hard cut): declines smoothly around the slope/elev thresholds.
   // Present only for parcels enriched with slope/elev (ETL/geo.admin).
   let terrain=null;
@@ -369,7 +383,7 @@ function scoreFeature(props){
   if(props._clim!=null) parts.push({key:'Klima',     v:+props._clim,w:w.clim});   // GDD-Raster (climate.json)
   const wsum=parts.reduce((a,p)=>a+p.w,0)||1;
   const score=parts.reduce((a,p)=>a+p.v*p.w,0)/wsum;
-  return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,cat:c.cat,parts};
+  return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,reason,cat:c.cat,parts};
 }
 
 /* ---------- map ---------- */
@@ -486,7 +500,7 @@ map.on('load',async ()=>{
    ['chk-slope','op-slope','slope'],['chk-zones','op-zones','zones']].forEach(a=>bindLayer(...a)());
   choroData=Promise.all([loadBFS(),getCantonGeo()]).then(()=>{choroTried=true;renderBFS();applyChoro();});
   await loadClimate();                      // climate grid ready before parcels are annotated
-  loadMills();                              // grain-mill points (toggleable overlay)
+  await loadMills();                        // grain-mill points (overlay + proximity filter)
   const gotLocal=await tryLocal();          // auto-load a local ETL file if one sits next to the page
   if(!gotLocal){ loadParcels(); map.on('moveend',loadParcels); }   // else live nationwide (whole CH)
 });
@@ -574,7 +588,20 @@ async function getCantonGeo(){
 /* ---------- Phase 3: climate grid + neighbourhood diversity ---------- */
 let CLIMATE=null;
 async function loadClimate(){ try{const r=await fetch('climate.json'); if(r.ok) CLIMATE=await r.json();}catch(e){} }
-async function loadMills(){ try{const r=await fetch('mills.geojson'); if(r.ok&&map.getSource('mills')) map.getSource('mills').setData(await r.json());}catch(e){} }
+let MILL_PTS=[];   // [[lon,lat],…] for the proximity filter
+async function loadMills(){
+  try{const r=await fetch('mills.geojson'); if(!r.ok)return; const j=await r.json();
+    if(map.getSource('mills')) map.getSource('mills').setData(j);
+    MILL_PTS=(j.features||[]).map(f=>f.geometry&&f.geometry.coordinates).filter(Boolean);
+  }catch(e){}
+}
+function kmToNearestMill(lon,lat){
+  if(!MILL_PTS.length) return null;
+  const latf=111.0, lonf=111.0*Math.cos(lat*Math.PI/180);
+  let best=Infinity;
+  for(const m of MILL_PTS){ const dx=(m[0]-lon)*lonf, dy=(m[1]-lat)*latf, d=dx*dx+dy*dy; if(d<best)best=d; }
+  return Math.round(Math.sqrt(best)*10)/10;
+}
 
 function centroidLonLat(geom){
   if(!geom) return null;
@@ -598,7 +625,8 @@ function annotate(fc){
   const feats=fc.features, cen=new Array(feats.length);
   for(let k=0;k<feats.length;k++){
     const c=centroidLonLat(feats[k].geometry); cen[k]=c;
-    feats[k].properties._clim = c?climateAt(c[0],c[1]):null;
+    feats[k].properties._clim   = c?climateAt(c[0],c[1]):null;
+    feats[k].properties._millkm = c?kmToNearestMill(c[0],c[1]):null;
   }
   const R=500, cellLat=R/111000, cellLon=R/75700;      // ~47°N
   const grid=new Map(), key=(ix,iy)=>ix+','+iy;
@@ -755,9 +783,10 @@ function renderBFS(){
 }
 
 /* re-score (no refetch) when filters change */
-['f-live','s-slope','s-elev'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
-  const v=document.getElementById('v-slope'),e=document.getElementById('v-elev');
-  v.textContent=document.getElementById('s-slope').value;e.textContent=document.getElementById('s-elev').value;
+['f-live','s-slope','s-elev','f-mill','s-millkm'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
+  document.getElementById('v-slope').textContent=document.getElementById('s-slope').value;
+  document.getElementById('v-elev').textContent=document.getElementById('s-elev').value;
+  document.getElementById('v-millkm').textContent=document.getElementById('s-millkm').value;
   rescore();
   const n=(lastFC&&lastFC.features)?lastFC.features.length:0;
   const ar=(lastFC&&lastFC.features)?lastFC.features.filter(f=>!f.properties.excluded).length:0;
@@ -828,10 +857,11 @@ function parcelPopupHTML(p,note){
     `Kategorie: ${CAT_DE[r.cat]||r.cat}<br>`+
     `LNF-Code: ${p.lnf_code||'—'} · ${p.flaeche_m2?(+p.flaeche_m2/10000).toFixed(2)+' ha':''}<br>`+
     `Kanton: ${p.kanton||'—'} · Jahr: ${p.bezugsjahr||'—'}`+
+    (p._millkm!=null?`<br>Nächste Getreidemühle: <b>${p._millkm} km</b>`:'')+
     `<hr style="border:none;border-top:1px solid #e2e8ef;margin:6px 0">`+
     `<div style="font-size:11.5px;color:#5c6b7a">Faktoren:<br>${rows}`+
       (note?`<br><span style="color:#2f7d4f">${note}</span>`:'')+`</div>`+
-    `<b style="color:${r.excluded?'#9aa5b1':'#1a6b62'}">Eignungs-Score: ${r.excluded?'ausgeschlossen (Tierhaltung/Grünland)':r.score}</b>`;
+    `<b style="color:${r.excluded?'#9aa5b1':'#1a6b62'}">Eignungs-Score: ${r.excluded?('ausgeschlossen'+(r.reason?' ('+r.reason+')':'')):r.score}</b>`;
 }
 map.on('click','parcels-fill',async e=>{
   const fid=e.features[0].id;
