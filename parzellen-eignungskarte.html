@@ -158,6 +158,11 @@
       <span class="nm">Datenverfügbarkeit Kantone</span>
     </div>
     <input class="op" type="range" min="0" max="100" value="55" id="op-zones">
+    <div class="lyr" style="margin-top:4px">
+      <input type="checkbox" id="chk-mills">
+      <span class="sw" style="background:#1a2430;border-radius:50%"></span>
+      <span class="nm">Getreidemühlen (DSM)</span>
+    </div>
   </div>
 
   <div class="sec">
@@ -245,6 +250,12 @@
     <div class="row"><span class="box" style="background:#d9d9d9"></span> im Aufbau</div>
     <div class="row"><span class="box pat-horiz"></span> ausser Betrieb</div>
     <div class="row"><span class="box pat-cross"></span> keine Daten</div>
+  </div>
+
+  <div class="lg-sec" data-lg="mills">
+    <h3>Getreidemühlen</h3>
+    <div class="row"><span class="box" style="background:#1a2430;border-radius:50%;border:1.4px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25)"></span> DSM-Mitglied (Standort, PLZ-genau)</div>
+    <div class="note" style="margin-top:3px">Quelle: Dachverband Schweizerischer Müller · &gt;96 % der Weichweizenvermahlung.</div>
   </div>
 
   <div class="lg-sec" data-lg="choro">
@@ -369,7 +380,8 @@ const style={version:8,sources:{
     slope:{type:'raster',tiles:[WMTS('ch.swisstopo.hangneigung-ueber_30','png')],tileSize:256,attribution:'© swisstopo'},
     zones:{type:'raster',tiles:[geodiensteWMS('verfuegbarkeit_kantone')],tileSize:256,attribution:'© geodienste.ch'},
     cantons:{type:'geojson',data:{type:'FeatureCollection',features:[]}},
-    parcels:{type:'geojson',generateId:true,data:{type:'FeatureCollection',features:[]}}
+    parcels:{type:'geojson',generateId:true,data:{type:'FeatureCollection',features:[]}},
+    mills:{type:'geojson',data:{type:'FeatureCollection',features:[]}}
   },
   layers:[
     {id:'base_grau',type:'raster',source:'base_grau'},
@@ -383,7 +395,10 @@ const style={version:8,sources:{
         'fill-color':['case',['==',['get','excluded'],true],'#9aa5b1',
           ['interpolate',['linear'],['get','score'],0,'#d7f0ee',25,'#7fcdc7',50,'#2a9d8f',75,'#1a6b62',100,'#0b3d38']],
         'fill-opacity':0.78}},
-    {id:'parcels-line',type:'line',source:'parcels',paint:{'line-color':'#2b3642','line-width':0.35,'line-opacity':0.45}}
+    {id:'parcels-line',type:'line',source:'parcels',paint:{'line-color':'#2b3642','line-width':0.35,'line-opacity':0.45}},
+    {id:'mills-circle',type:'circle',source:'mills',layout:{visibility:'none'},paint:{
+        'circle-radius':['interpolate',['linear'],['zoom'],7,3.5,13,6,16,8],
+        'circle-color':'#1a2430','circle-stroke-color':'#ffffff','circle-stroke-width':1.4,'circle-opacity':0.92}}
   ]};
 
 const map=new maplibregl.Map({container:'map',style,center:START_CENTER,zoom:START_ZOOM,maxBounds:CH_BOUNDS,minZoom:6.5,maxZoom:18});
@@ -395,7 +410,7 @@ const load=(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v}catch
 const setStatus=t=>document.getElementById('status').textContent=t;
 
 /* show each legend block only when its layer is actually visible */
-const LEGEND_CHK={score:'chk-score',soil:'chk-soil',slope:'chk-slope',zones:'chk-zones',choro:'chk-choro'};
+const LEGEND_CHK={score:'chk-score',soil:'chk-soil',slope:'chk-slope',zones:'chk-zones',mills:'chk-mills',choro:'chk-choro'};
 function syncLegend(){
   for(const key in LEGEND_CHK){
     const sec=document.querySelector('.lg-sec[data-lg="'+key+'"]');
@@ -471,6 +486,7 @@ map.on('load',async ()=>{
    ['chk-slope','op-slope','slope'],['chk-zones','op-zones','zones']].forEach(a=>bindLayer(...a)());
   choroData=Promise.all([loadBFS(),getCantonGeo()]).then(()=>{choroTried=true;renderBFS();applyChoro();});
   await loadClimate();                      // climate grid ready before parcels are annotated
+  loadMills();                              // grain-mill points (toggleable overlay)
   const gotLocal=await tryLocal();          // auto-load a local ETL file if one sits next to the page
   if(!gotLocal){ loadParcels(); map.on('moveend',loadParcels); }   // else live nationwide (whole CH)
 });
@@ -558,6 +574,7 @@ async function getCantonGeo(){
 /* ---------- Phase 3: climate grid + neighbourhood diversity ---------- */
 let CLIMATE=null;
 async function loadClimate(){ try{const r=await fetch('climate.json'); if(r.ok) CLIMATE=await r.json();}catch(e){} }
+async function loadMills(){ try{const r=await fetch('mills.geojson'); if(r.ok&&map.getSource('mills')) map.getSource('mills').setData(await r.json());}catch(e){} }
 
 function centroidLonLat(geom){
   if(!geom) return null;
@@ -748,6 +765,10 @@ function renderBFS(){
 }));
 document.getElementById('chk-live').addEventListener('change',loadParcels);
 document.getElementById('btn-enrich').addEventListener('click',enrichVisible);
+document.getElementById('chk-mills').addEventListener('change',e=>{
+  if(map.getLayer('mills-circle')) map.setLayoutProperty('mills-circle','visibility',e.target.checked?'visible':'none');
+  syncLegend();
+});
 
 // score weights → live re-score
 ['w-crop','w-soil','w-terrain','w-div','w-clim'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
@@ -831,6 +852,16 @@ map.on('click','parcels-fill',async e=>{
 });
 map.on('mouseenter','parcels-fill',()=>map.getCanvas().style.cursor='pointer');
 map.on('mouseleave','parcels-fill',()=>map.getCanvas().style.cursor='');
+
+map.on('click','mills-circle',e=>{
+  const p=e.features[0].properties;
+  new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
+    `<b>${p.name}</b><br>${p.plz} ${p.ort}`+
+    `<br><span style="color:#5c6b7a;font-size:11px">Getreidemühle · Quelle: DSM-Mitgliederverzeichnis</span>`
+  ).addTo(map);
+});
+map.on('mouseenter','mills-circle',()=>map.getCanvas().style.cursor='pointer');
+map.on('mouseleave','mills-circle',()=>map.getCanvas().style.cursor='');
 </script>
 </body>
 </html>
