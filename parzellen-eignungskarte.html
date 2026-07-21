@@ -80,7 +80,7 @@
   <span class="sub">öffentliche Geodaten · geodienste.ch · geo.admin.ch · BFS</span>
 </div>
 
-<div class="status" id="status">Zum Laden der Parzellen hineinzoomen (Stufe ≥ 13).</div>
+<div class="status" id="status">Parzellen werden geladen … (herauszoomen für die Schweiz-Übersicht)</div>
 <button class="toggle-panel" id="togglePanel">☰ Filter</button>
 
 <div class="panel" id="panel">
@@ -261,6 +261,9 @@
 
 <script>
 const CH_CENTER=[7.44,46.95], CH_BOUNDS=[[5.6,45.7],[10.7,47.9]];
+// Start already zoomed into a dense arable region (Seeland/Grosses Moos) so
+// parcels load on open; user can zoom out to the national overview (minZoom).
+const START_CENTER=[7.10,47.02], START_ZOOM=13;
 const OGC='https://geodienste.ch/db/lwb_nutzungsflaechen_v2_0_0/deu/ogcapi';
 const PARCEL_MIN_Z=13, LIMIT=3000;
 const WMTS=(l,fmt)=>`https://wmts.geo.admin.ch/1.0.0/${l}/default/current/3857/{z}/{x}/{y}.${fmt}`;
@@ -384,7 +387,7 @@ const style={version:8,sources:{
     {id:'parcels-line',type:'line',source:'parcels',paint:{'line-color':'#2b3642','line-width':0.35,'line-opacity':0.45}}
   ]};
 
-const map=new maplibregl.Map({container:'map',style,center:CH_CENTER,zoom:8,maxBounds:CH_BOUNDS,minZoom:6.5,maxZoom:18});
+const map=new maplibregl.Map({container:'map',style,center:START_CENTER,zoom:START_ZOOM,maxBounds:CH_BOUNDS,minZoom:6.5,maxZoom:18});
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
 map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-right');
 
