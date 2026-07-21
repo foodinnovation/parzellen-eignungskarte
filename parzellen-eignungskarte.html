@@ -107,6 +107,21 @@
   </div>
 
   <div class="sec">
+    <h2>Score-Gewichte</h2>
+    <div class="ctrl">
+      <label>Kultur-Eignung <b><span id="v-wcrop">100</span></b></label>
+      <input type="range" min="0" max="100" value="100" id="w-crop">
+    </div>
+    <div class="ctrl">
+      <label>Bodeneignung <b><span id="v-wsoil">60</span></b></label>
+      <input type="range" min="0" max="100" value="60" id="w-soil">
+    </div>
+    <p class="note">Relative Gewichte im 0–100-Score (gewichtetes Mittel über die
+      vorhandenen Faktoren). Das Bodengewicht wirkt auf Parzellen mit angereicherten
+      Bodendaten (ETL); Terrain-, Diversitäts- und Klima-Gewichte folgen in späteren Phasen.</p>
+  </div>
+
+  <div class="sec">
     <h2>Kontext-Ebenen</h2>
     <div class="lyr">
       <input type="checkbox" id="chk-soil" checked>
@@ -235,25 +250,50 @@ const geodiensteWMS=(l)=>`https://wfs.geodienste.ch/lwb_nutzungsflaechen_v2_0_0/
 
 /* ---------- crop classification (shared logic with the ETL) ---------- */
 // Primary key: lnf_code numeric ranges. Text overrides fodder within arable codes.
+// Mixed-crop affinity as a transparent 0-100 heuristic. The human-readable
+// `nutzung` text is the primary signal (reliable); lnf_code ranges are the
+// fallback. Order matters — earlier rules win.
 function classify(props){
   const code=parseInt(props.lnf_code,10);
   const n=(props.nutzung||'').toLowerCase();
-  const fodder=['silomais','grünmais','gruenmais','silo- und','futterrübe','futterrube','futterrüben'].some(k=>n.includes(k));
-  // Grassland / pasture / meadow → livestock system
-  if((code>=600&&code<=699)||['wiese','weide','weiden','grünfläche','gruenflaeche','streue','sömmerung','soemmerung'].some(k=>n.includes(k)))
+  const any=(...ks)=>ks.some(k=>n.includes(k));
+
+  // Fodder crops on arable land (Silomais etc.) → livestock, excluded.
+  // Checked first so "Silomais" is not mistaken for grain maize.
+  if(any('silomais','grünmais','gruenmais','silo- und','futtermais','futterrübe','futterrube','futterrüben'))
+    return {cat:'fodder',base:20,live:true};
+
+  // Temporary ley / clover-grass (Kunstwiese) → part of the arable rotation,
+  // mixed-crop friendly, NOT a livestock exclusion.
+  if(any('kunstwiese','kunstfutter','luzerne','wechselwiese','einsaat','ackerklee') || (any('klee')&&!any('weide')))
+    return {cat:'ley',base:55,live:false};
+
+  // Permanent grassland / pasture / summer pasture → real livestock, excluded.
+  if((code>=600&&code<=699) || any('dauerwiese','dauerweide','weide','weiden','extensiv','streue','sömmerung','soemmerung','naturwiese','waldweide','grünfläche','gruenflaeche') || any('wiese'))
     return {cat:'grassland',base:5,live:true};
-  // Open arable field crops → mixed-crop suitable (fodder maize etc. count as livestock)
-  if(code>=400&&code<=599){
-    if(fodder) return {cat:'fodder',base:20,live:true};
-    return {cat:'arable',base:85,live:false};
-  }
-  // Permanent crops (vines, orchards, berries, hops, nurseries)
-  if(code>=700&&code<=799) return {cat:'permanent',base:35,live:false};
-  // Everything else (hedges, forest, unproductive, water)
-  if(fodder) return {cat:'fodder',base:20,live:true};
+
+  // Legumes / N-fixers → highest mixed-crop affinity.
+  if(any('eiweisserbse','eiweisspflanz','ackerbohne','pferdebohne','sojabohne','soja','lupine','linse','kichererbse','leguminos') || any('erbse') || (any('bohne')&&!any('futter')))
+    return {cat:'legume',base:95,live:false};
+
+  // Diverse row / horticultural / oil crops → high affinity.
+  if(any('gemüse','gemuese','kartoffel','zuckerrübe','zuckerrube','randen','karotte','zwiebel','kohl','salat','kürbis','kuerbis','buchweizen','hirse','quinoa','sonnenblume','raps','lein','hanf'))
+    return {cat:'diverse',base:85,live:false};
+
+  // Cereals → solid, but monoculture-typical.
+  if(any('weizen','gerste','roggen','dinkel','hafer','triticale','emmer','einkorn','getreide','mais'))
+    return {cat:'cereal',base:70,live:false};
+
+  // Permanent crops (vines, orchards, berries, hops, nurseries).
+  if((code>=700&&code<=799) || any('reb','wein','obst','baumschul','beeren','hopfen','christbaum','zierpflanz'))
+    return {cat:'permanent',base:35,live:false};
+
+  // Fallback: open arable code range without a named crop.
+  if(code>=400&&code<=599) return {cat:'arable',base:78,live:false};
   return {cat:'other',base:12,live:false};
 }
-const CAT_DE={arable:'Ackerkultur',grassland:'Grünland/Weide',fodder:'Futterbau',permanent:'Dauerkultur',other:'Übrige'};
+const CAT_DE={legume:'Leguminose (N-Fixierer)',diverse:'Acker – divers',cereal:'Getreide',arable:'Ackerkultur',
+  ley:'Kunstwiese (Rotation)',permanent:'Dauerkultur',fodder:'Futterbau',grassland:'Grünland/Weide',other:'Übrige'};
 
 /* ---------- score one parcel from current UI state ---------- */
 function ui(){return{
@@ -261,17 +301,27 @@ function ui(){return{
   maxSlope:+document.getElementById('s-slope').value,
   maxElev:+document.getElementById('s-elev').value
 };}
+// User-adjustable score weights (0-100). Factors without data for a parcel
+// are simply left out of the weighted average, so live-only parcels score on
+// crop affinity alone. Terrain/diversity/climate weights are added in later phases.
+function weights(){
+  const g=id=>{const el=document.getElementById(id);return el?+el.value:null;};
+  const crop=g('w-crop'), soil=g('w-soil');   // 0 is a valid weight — only fall back when the slider is absent
+  return {crop:crop==null?100:crop, soil:soil==null?0:soil};
+}
 function scoreFeature(props){
-  const c=classify(props); const s=ui();
+  const c=classify(props); const s=ui(); const w=weights();
   let excluded=false;
   if(s.excludeLive && c.live) excluded=true;
   // terrain thresholds apply only when ETL-enriched values exist
   if(props.slope!=null && +props.slope>s.maxSlope) excluded=true;
   if(props.elev!=null && +props.elev>s.maxElev) excluded=true;
-  let score=c.base;
-  // if ETL provided a soil suitability score (0-100), blend it in
-  if(props.soil_score!=null) score=Math.round(0.6*c.base+0.4*(+props.soil_score));
-  return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,cat:c.cat};
+  // weighted average over the factors actually available for this parcel
+  const parts=[{key:'Kultur',v:c.base,w:w.crop}];
+  if(props.soil_score!=null) parts.push({key:'Boden',v:+props.soil_score,w:w.soil});
+  const wsum=parts.reduce((a,p)=>a+p.w,0)||1;
+  const score=parts.reduce((a,p)=>a+p.v*p.w,0)/wsum;
+  return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,cat:c.cat,parts};
 }
 
 /* ---------- map ---------- */
@@ -535,6 +585,13 @@ function renderBFS(){
 }));
 document.getElementById('chk-live').addEventListener('change',loadParcels);
 
+// score weights → live re-score
+['w-crop','w-soil'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
+  document.getElementById('v-wcrop').textContent=document.getElementById('w-crop').value;
+  document.getElementById('v-wsoil').textContent=document.getElementById('w-soil').value;
+  rescore();
+}));
+
 /* ---------- presets ---------- */
 function setPreset(name){
   const cfg=name==='mixed'
@@ -578,12 +635,16 @@ window.addEventListener('resize',respond);respond();
 /* parcel popup */
 map.on('click','parcels-fill',e=>{
   const p=e.features[0].properties;
+  const r=scoreFeature(p);                       // recompute fresh → factor breakdown
+  const rows=r.parts.map(pt=>`&nbsp;&nbsp;${pt.key}: <b>${Math.round(pt.v)}</b> <span style="color:#8a97a5">· Gewicht ${pt.w}</span>`).join('<br>');
   new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
     `<b>${p.nutzung||'Nutzung ?'}</b><br>`+
-    `Kategorie: ${p._catde||'—'}<br>`+
+    `Kategorie: ${CAT_DE[r.cat]||r.cat}<br>`+
     `LNF-Code: ${p.lnf_code||'—'} · ${p.flaeche_m2?(+p.flaeche_m2/10000).toFixed(2)+' ha':''}<br>`+
-    `Kanton: ${p.kanton||'—'} · Jahr: ${p.bezugsjahr||'—'}<br>`+
-    `<b style="color:${p.excluded?'#9aa5b1':'#2f7d4f'}">Eignungs-Score: ${p.excluded?'ausgeschlossen':p.score}</b>`
+    `Kanton: ${p.kanton||'—'} · Jahr: ${p.bezugsjahr||'—'}`+
+    `<hr style="border:none;border-top:1px solid #e2e8ef;margin:6px 0">`+
+    `<div style="font-size:11.5px;color:#5c6b7a">Faktoren:<br>${rows}</div>`+
+    `<b style="color:${r.excluded?'#9aa5b1':'#2f7d4f'}">Eignungs-Score: ${r.excluded?'ausgeschlossen (Tierhaltung/Grünland)':r.score}</b>`
   ).addTo(map);
 });
 map.on('mouseenter','parcels-fill',()=>map.getCanvas().style.cursor='pointer');
