@@ -116,9 +116,13 @@
       <label>Bodeneignung <b><span id="v-wsoil">60</span></b></label>
       <input type="range" min="0" max="100" value="60" id="w-soil">
     </div>
+    <div class="ctrl">
+      <label>Terrain (Hang/Höhe) <b><span id="v-wterrain">70</span></b></label>
+      <input type="range" min="0" max="100" value="70" id="w-terrain">
+    </div>
     <p class="note">Relative Gewichte im 0–100-Score (gewichtetes Mittel über die
-      vorhandenen Faktoren). Das Bodengewicht wirkt auf Parzellen mit angereicherten
-      Bodendaten (ETL); Terrain-, Diversitäts- und Klima-Gewichte folgen in späteren Phasen.</p>
+      vorhandenen Faktoren). Boden- und Terrain-Gewicht wirken auf Parzellen mit
+      angereicherten Daten (<code>--geoadmin</code>/ETL); Diversitäts- und Klima-Gewichte folgen.</p>
   </div>
 
   <div class="sec">
@@ -150,15 +154,16 @@
       <span class="nm">Tierhaltungs-/Grünland-Systeme ausschliessen</span>
     </div>
     <div class="ctrl">
-      <label>Max. Hangneigung <b><span id="v-slope">18</span>%</b></label>
+      <label>Hangneigung-Schwelle <b><span id="v-slope">18</span>%</b></label>
       <input type="range" min="0" max="50" value="18" id="s-slope">
     </div>
     <div class="ctrl">
-      <label>Max. Höhe ü. M. <b><span id="v-elev">900</span> m</b></label>
+      <label>Höhen-Schwelle <b><span id="v-elev">900</span> m</b></label>
       <input type="range" min="300" max="2000" step="50" value="900" id="s-elev">
     </div>
-    <p class="note">Hangneigung/Höhe wirken auf Parzellen mit angereicherten Daten
-      (<code>slope</code>/<code>elev</code> aus dem ETL). Live-Parzellen tragen vorerst nur die Kultur-Bewertung.</p>
+    <p class="note">Weiche Schwellen: der Terrain-Faktor sinkt rund um diese Werte von 100 auf 0
+      (kein harter Ausschnitt). Wirkt auf Parzellen mit <code>slope</code>/<code>elev</code>
+      (<code>--geoadmin</code>/ETL); reine Live-Parzellen tragen nur die Kultur-Bewertung.</p>
   </div>
 
   <div class="sec">
@@ -306,19 +311,32 @@ function ui(){return{
 // crop affinity alone. Terrain/diversity/climate weights are added in later phases.
 function weights(){
   const g=id=>{const el=document.getElementById(id);return el?+el.value:null;};
-  const crop=g('w-crop'), soil=g('w-soil');   // 0 is a valid weight — only fall back when the slider is absent
-  return {crop:crop==null?100:crop, soil:soil==null?0:soil};
+  const crop=g('w-crop'), soil=g('w-soil'), terrain=g('w-terrain');   // 0 is valid — fall back only when the slider is absent
+  return {crop:crop==null?100:crop, soil:soil==null?0:soil, terrain:terrain==null?0:terrain};
+}
+// smooth 100→0 ramp: full score up to (thr-width), zero beyond (thr+width)
+function softBelow(v,thr,width){
+  if(v<=thr-width) return 100;
+  if(v>=thr+width) return 0;
+  return 100*(1-(v-(thr-width))/(2*width));
 }
 function scoreFeature(props){
   const c=classify(props); const s=ui(); const w=weights();
   let excluded=false;
-  if(s.excludeLive && c.live) excluded=true;
-  // terrain thresholds apply only when ETL-enriched values exist
-  if(props.slope!=null && +props.slope>s.maxSlope) excluded=true;
-  if(props.elev!=null && +props.elev>s.maxElev) excluded=true;
+  if(s.excludeLive && c.live) excluded=true;         // only livestock/grassland is a hard exclusion
+  // terrain as a SOFT factor (no hard cut): declines smoothly around the slope/elev thresholds.
+  // Present only for parcels enriched with slope/elev (ETL/geo.admin).
+  let terrain=null;
+  if(props.slope!=null || props.elev!=null){
+    let t=100;
+    if(props.slope!=null) t=Math.min(t,softBelow(+props.slope,s.maxSlope,6));
+    if(props.elev!=null)  t=Math.min(t,softBelow(+props.elev, s.maxElev,200));
+    terrain=Math.max(0,Math.min(100,Math.round(t)));
+  }
   // weighted average over the factors actually available for this parcel
   const parts=[{key:'Kultur',v:c.base,w:w.crop}];
   if(props.soil_score!=null) parts.push({key:'Boden',v:+props.soil_score,w:w.soil});
+  if(terrain!=null) parts.push({key:'Terrain',v:terrain,w:w.terrain});
   const wsum=parts.reduce((a,p)=>a+p.w,0)||1;
   const score=parts.reduce((a,p)=>a+p.v*p.w,0)/wsum;
   return {score:Math.max(0,Math.min(100,Math.round(score))),excluded,cat:c.cat,parts};
@@ -586,9 +604,10 @@ function renderBFS(){
 document.getElementById('chk-live').addEventListener('change',loadParcels);
 
 // score weights → live re-score
-['w-crop','w-soil'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
+['w-crop','w-soil','w-terrain'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{
   document.getElementById('v-wcrop').textContent=document.getElementById('w-crop').value;
   document.getElementById('v-wsoil').textContent=document.getElementById('w-soil').value;
+  document.getElementById('v-wterrain').textContent=document.getElementById('w-terrain').value;
   rescore();
 }));
 

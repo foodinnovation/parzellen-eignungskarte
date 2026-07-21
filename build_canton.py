@@ -18,21 +18,26 @@ CORE PATH (no extra installs, uses only the Python standard library):
     python3 build_canton.py --canton AG
     python3 build_canton.py --canton SO --out solothurn.geojson
 
-OPTIONAL TERRAIN/SOIL ENRICHMENT (needs geopandas + rasterio + rasterstats):
-    # soil suitability polygons  (download the BLW "Bodeneignung Kulturland"
-    #   GeoPackage/Shapefile from opendata.swiss first)
+RECOMMENDED ENRICHMENT — geo.admin REST, no downloads, stdlib only:
+    python3 build_canton.py --canton AG --geoadmin --max 1500
+    # per parcel: soil_score (0-100) from BLW Bodeneignung "identify",
+    #             elev (m) + slope (%) from the swisstopo height API.
+    # Cached on a coarse LV95 grid; use --max while testing (one call set
+    # per new grid cell). These feed the map's Boden-/Terrain-Score directly.
+
+OPTIONAL FILE-BASED ENRICHMENT (needs geopandas + rasterio + rasterstats):
+    # soil = BLW "Bodeneignung Kulturland" GeoPackage/Shapefile (opendata.swiss)
     # dem  = a swissALTI3D / DHM GeoTIFF covering the canton
     python3 build_canton.py --canton AG \
         --soil bodeneignung_kulturland.gpkg \
         --dem  swissalti3d_ag.tif
 
-When --soil / --dem are given, each parcel additionally receives:
-    soil_score (0-100), slope (%), elev (m)   → folded into the final score
-    and the map's Hangneigung/Höhe sliders then filter these parcels for real.
+Either way each parcel gains soil_score (0-100), slope (%), elev (m); the map
+recomputes the score client-side and the Hangneigung/Höhe sliders then bite.
 --------------------------------------------------------------------
 """
 
-import argparse, json, sys, gzip, io, time
+import argparse, json, sys, gzip, io, time, math
 from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 
@@ -56,34 +61,165 @@ CANTON_BBOX = {
 }
 
 # ------------------------- crop classification -------------------------
-# Mirrors the JavaScript classifier in the HTML. Primary key = lnf_code range;
-# German-text keywords override fodder crops that sit on arable land.
-FODDER_KW = ("silomais", "grünmais", "gruenmais", "silo- und",
-             "futterrübe", "futterrube", "futterrüben")
-GRASS_KW  = ("wiese", "weide", "weiden", "grünfläche", "gruenflaeche",
-             "streue", "sömmerung", "soemmerung")
-
+# Mirrors the JavaScript classifier in the HTML (keep the two in sync).
+# Primary signal = human-readable `nutzung` text; lnf_code range is the fallback.
 def classify(props):
     try:
         code = int(props.get("lnf_code"))
     except (TypeError, ValueError):
         code = -1
     n = (props.get("nutzung") or "").lower()
-    is_fodder = any(k in n for k in FODDER_KW)
-    if (600 <= code <= 699) or any(k in n for k in GRASS_KW):
-        return "grassland", 5, True
-    if 400 <= code <= 599:
-        return ("fodder", 20, True) if is_fodder else ("arable", 85, False)
-    if 700 <= code <= 799:
-        return "permanent", 35, False
-    if is_fodder:
+    def any_(*ks): return any(k in n for k in ks)
+
+    # Fodder crops on arable land (Silomais etc.) → livestock, excluded (before cereals).
+    if any_("silomais", "grünmais", "gruenmais", "silo- und", "futtermais",
+            "futterrübe", "futterrube", "futterrüben"):
         return "fodder", 20, True
+    # Temporary ley / clover-grass → arable rotation, mixed-friendly, NOT excluded.
+    if any_("kunstwiese", "kunstfutter", "luzerne", "wechselwiese", "einsaat", "ackerklee") \
+            or ("klee" in n and "weide" not in n):
+        return "ley", 55, False
+    # Permanent grassland / pasture / summer pasture → livestock, excluded.
+    if (600 <= code <= 699) or any_("dauerwiese", "dauerweide", "weide", "weiden",
+            "extensiv", "streue", "sömmerung", "soemmerung", "naturwiese", "waldweide",
+            "grünfläche", "gruenflaeche") or "wiese" in n:
+        return "grassland", 5, True
+    # Legumes / N-fixers → highest affinity.
+    if any_("eiweisserbse", "eiweisspflanz", "ackerbohne", "pferdebohne", "sojabohne",
+            "soja", "lupine", "linse", "kichererbse", "leguminos") \
+            or "erbse" in n or ("bohne" in n and "futter" not in n):
+        return "legume", 95, False
+    # Diverse row / horticultural / oil crops → high.
+    if any_("gemüse", "gemuese", "kartoffel", "zuckerrübe", "zuckerrube", "randen",
+            "karotte", "zwiebel", "kohl", "salat", "kürbis", "kuerbis", "buchweizen",
+            "hirse", "quinoa", "sonnenblume", "raps", "lein", "hanf"):
+        return "diverse", 85, False
+    # Cereals → good but monoculture-typical.
+    if any_("weizen", "gerste", "roggen", "dinkel", "hafer", "triticale", "emmer",
+            "einkorn", "getreide", "mais"):
+        return "cereal", 70, False
+    # Permanent crops (vines, orchards, berries, hops, nurseries).
+    if (700 <= code <= 799) or any_("reb", "wein", "obst", "baumschul", "beeren",
+            "hopfen", "christbaum", "zierpflanz"):
+        return "permanent", 35, False
+    if 400 <= code <= 599:
+        return "arable", 78, False
     return "other", 12, False
 
 def base_score(props, soil_score=None):
     cat, base, live = classify(props)
     score = base if soil_score is None else round(0.6*base + 0.4*soil_score)
     return cat, max(0, min(100, int(score))), live
+
+# ------------------------- geo.admin REST enrichment (stdlib) -------------------------
+# Per-parcel soil suitability + elevation/slope straight from public geo.admin
+# services — no GeoPackage/DEM download needed. Results are cached on a coarse
+# LV95 grid so neighbouring parcels reuse lookups.
+
+def wgs84_to_lv95(lon, lat):
+    """Approximate WGS84 → CH1903+/LV95 (swisstopo formula, ~1 m accuracy)."""
+    p = (lat*3600 - 169028.66) / 10000.0
+    l = (lon*3600 -  26782.5)  / 10000.0
+    E = (2600072.37 + 211455.93*l - 10938.51*l*p - 0.36*l*p*p - 44.54*l**3)
+    N = (1200147.07 + 308807.95*p + 3745.25*l*l + 76.63*p*p
+         - 194.56*l*l*p + 119.79*p**3)
+    return E, N
+
+def _ring_centroid(ring):
+    xs = [c[0] for c in ring]; ys = [c[1] for c in ring]
+    return sum(xs)/len(xs), sum(ys)/len(ys)
+
+def centroid_lonlat(geom):
+    t = geom.get("type"); c = geom.get("coordinates") or []
+    if t == "Polygon" and c:
+        return _ring_centroid(c[0])
+    if t == "MultiPolygon" and c:
+        return _ring_centroid(max(c, key=lambda poly: len(poly[0]))[0])
+    return None
+
+def _get_json(url):
+    req = Request(url, headers={"User-Agent": "sfr-parcel-etl/1.0"})
+    with urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def geoadmin_height(E, N):
+    try:
+        h = _get_json(f"https://api3.geo.admin.ch/rest/services/height"
+                      f"?easting={E:.1f}&northing={N:.1f}&sr=2056").get("height")
+        return float(h) if h not in (None, "") else None
+    except Exception:
+        return None
+
+# crop-term → arable-suitability weight, applied to the "+/++/+/-" grade in eignungsei
+_TERM_W = {"ackerbau":1.0, "acker":1.0, "getreideb":0.85, "hackfruchtb":0.85,
+           "kunstfutterbau":0.6, "rebbau":0.7, "obstbau":0.6,
+           "naturfutterbau":0.3, "futterbau":0.3, "grossvieh":0.25,
+           "kleinviehweide":0.1, "weide":0.15, "sömmerung":0.1, "soemmerung":0.1}
+
+def soil_score_from_text(t):
+    """Map a BLW `eignungsei` description to a coarse 0-100 arable-suitability."""
+    t = (t or "").lower()
+    if any(k in t for k in ("siedlung", "fels", "gletscher", "enklav")) \
+            and "acker" not in t and "futter" not in t:
+        return 5
+    best, found = 0.0, False
+    for clause in t.split(";"):
+        terms, _, grade = clause.partition(":")
+        if   "++"  in grade:                 g = 1.0
+        elif "+/-" in grade or "±" in grade: g = 0.45
+        elif "+"   in grade:                 g = 0.75
+        elif "-"   in grade:                 g = 0.15
+        else:                                g = 0.5
+        for term, w in _TERM_W.items():
+            if term in terms:
+                best = max(best, w*g); found = True
+    return round(100*best) if found else 30
+
+def geoadmin_soil(E, N):
+    q = {"geometry": f"{E:.1f},{N:.1f}", "geometryType": "esriGeometryPoint",
+         "layers": "all:ch.blw.bodeneignung-kulturland",
+         "mapExtent": f"{E-500:.0f},{N-500:.0f},{E+500:.0f},{N+500:.0f}",
+         "imageDisplay": "100,100,96", "tolerance": "0", "sr": "2056",
+         "returnGeometry": "false", "lang": "de"}
+    try:
+        res = _get_json("https://api3.geo.admin.ch/rest/services/all/MapServer/identify?"
+                        + urlencode(q)).get("results", [])
+        return soil_score_from_text(res[0]["attributes"].get("eignungsei", "")) if res else None
+    except Exception:
+        return None
+
+def enrich_geoadmin(features, do_soil=True, do_terrain=True,
+                    step=20.0, grid=50.0, pause=0.05):
+    """Attach soil_score / slope(%) / elev(m) per parcel via geo.admin REST."""
+    hcache, scache = {}, {}
+    rnd = lambda v: round(v/grid)*grid
+    for i, f in enumerate(features):
+        cen = centroid_lonlat(f.get("geometry") or {})
+        if not cen:
+            continue
+        E, N = wgs84_to_lv95(cen[0], cen[1])
+        key = (rnd(E), rnd(N))
+        if do_terrain:
+            if key not in hcache:
+                h0, hE, hN = geoadmin_height(E, N), geoadmin_height(E+step, N), geoadmin_height(E, N+step)
+                if None not in (h0, hE, hN):
+                    slope = math.hypot((hE-h0)/step, (hN-h0)/step) * 100.0
+                    hcache[key] = (round(h0, 1), round(slope, 1))
+                else:
+                    hcache[key] = (h0, None)
+                time.sleep(pause)
+            elev, slope = hcache[key]
+            if elev  is not None: f["properties"]["elev"]  = elev
+            if slope is not None: f["properties"]["slope"] = slope
+        if do_soil:
+            if key not in scache:
+                scache[key] = geoadmin_soil(E, N); time.sleep(pause)
+            if scache[key] is not None:
+                f["properties"]["soil_score"] = scache[key]
+        if (i+1) % 100 == 0:
+            print(f"  enriched {i+1}/{len(features)}  (height-cache {len(hcache)}, soil-cache {len(scache)})",
+                  file=sys.stderr)
+    return features
 
 # ------------------------- fetching (stdlib) -------------------------
 def fetch_json(url):
@@ -102,6 +238,9 @@ def next_link(doc):
     return None
 
 def fetch_parcels(canton, bbox, page=2000, max_features=None):
+    # keep pages modest so --max caps the count tightly instead of overshooting a full page
+    if max_features:
+        page = min(page, max_features)
     q = {"f": "json", "limit": page, "bbox": ",".join(f"{c:.5f}" for c in bbox)}
     url = f"{OGC}/collections/{COLLECTION}/items?{urlencode(q)}"
     feats, page_no = [], 0
@@ -119,6 +258,7 @@ def fetch_parcels(canton, bbox, page=2000, max_features=None):
         print(f"  page {page_no}: +{len(got)} fetched, {len(feats)} in {canton}",
               file=sys.stderr)
         if max_features and len(feats) >= max_features:
+            del feats[max_features:]          # trim exact cap
             break
         url = next_link(doc)
         time.sleep(0.2)  # be polite
@@ -192,6 +332,11 @@ def main():
     ap.add_argument("--max", type=int, default=None, help="Cap number of parcels (testing)")
     ap.add_argument("--soil", help="Path to BLW Bodeneignung polygons (gpkg/shp)")
     ap.add_argument("--dem", help="Path to DEM GeoTIFF (swissALTI3D/DHM) for slope+elev")
+    ap.add_argument("--geoadmin", action="store_true",
+                    help="Enrich soil + slope/elev per parcel via public geo.admin REST "
+                         "APIs (no GeoPackage/DEM download needed)")
+    ap.add_argument("--pause", type=float, default=0.05,
+                    help="Delay between geo.admin calls in seconds (default 0.05)")
     a = ap.parse_args()
 
     canton = a.canton.upper()
@@ -203,8 +348,12 @@ def main():
     feats = fetch_parcels(canton, bbox, max_features=a.max)
     print(f"Collected {len(feats)} parcels.", file=sys.stderr)
 
-    if a.soil or a.dem:
-        print("Enriching with soil / terrain …", file=sys.stderr)
+    if a.geoadmin:
+        print("Enriching soil + terrain via geo.admin REST (this can take a while) …",
+              file=sys.stderr)
+        feats = enrich_geoadmin(feats, pause=a.pause)
+    elif a.soil or a.dem:
+        print("Enriching with soil / terrain from local files …", file=sys.stderr)
         try:
             feats = enrich(feats, a.soil, a.dem)
         except ImportError as e:
@@ -212,7 +361,8 @@ def main():
                   file=sys.stderr)
 
     # score
-    stats = {"arable": 0, "grassland": 0, "fodder": 0, "permanent": 0, "other": 0}
+    stats = {"legume": 0, "diverse": 0, "cereal": 0, "arable": 0, "ley": 0,
+             "permanent": 0, "fodder": 0, "grassland": 0, "other": 0}
     for f in feats:
         p = f["properties"]
         cat, score, live = base_score(p, p.get("soil_score"))

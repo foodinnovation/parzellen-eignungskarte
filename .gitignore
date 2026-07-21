@@ -2,7 +2,8 @@
 __pycache__/
 *.pyc
 
-# Baked data artifacts (regenerate with build scripts)
-parcels_scored.geojson
-# bfs_cantons.json is bundled on purpose (BFS canton context for the choropleth)
-# cantons.geojson is bundled on purpose (canton boundaries for the choropleth)
+# Baked data are bundled on purpose:
+#   bfs_cantons.json     — BFS canton context for the choropleth
+#   cantons.geojson      — canton boundaries for the choropleth
+#   parcels_scored.geojson — demo canton (AG, Seetal/Aare plain) with soil+terrain
+# Nothing to ignore for now.

@@ -49,16 +49,17 @@ für den produktiven Einsatz.
 | `parzellen-eignungskarte.html` | Die Karte. Das ist alles, was Betrachter brauchen. | alle |
 | `cantons.geojson` | Kantonsgrenzen für die BFS-Choropleth (gebündelt). | — |
 | `bfs_cantons.json` | BFS-Kantonskontext: Bio-Anteil, Haupterwerb, Grünland (gebündelt, Jahr 2025). | — |
+| `parcels_scored.geojson` | Demo-Parzellen (AG, Seetal/Aare-Ebene, 500 Stück) mit Boden/Hang/Höhe – zeigt den angereicherten Score. | — |
 | `build_canton.py` | Optional: bäckt einen Kanton in eine statische GeoJSON (mit Boden/Hangneigung). | techn. Person |
 | `build_bfs.py` | Optional: erzeugt `bfs_cantons.json` neu (z.B. für ein anderes Jahr). | techn. Person |
 | `farm-parcel-map-build-plan.md` | Konzept & Architektur, Roadmap. | Doku |
 | `phase0-spike-findings.md` | Datenverfügbarkeit & Machbarkeit. | Doku |
 
-`cantons.geojson` und `bfs_cantons.json` sind **bewusst mitgeliefert**, damit die
-Choropleth ohne externe Quellen und ohne CORS-Probleme funktioniert. Nur die
-parzellenweise gebackene `parcels_scored.geojson` bleibt ausgeschlossen (pro
-Kanton mit `build_canton.py` erzeugbar); die Karte findet sie automatisch, wenn
-sie neben der `.html` liegt.
+`cantons.geojson`, `bfs_cantons.json` und die Demo-`parcels_scored.geojson` sind
+**bewusst mitgeliefert**, damit Choropleth und angereicherter Parzellen-Score ohne
+externe Quellen und ohne CORS-Probleme funktionieren. `parcels_scored.geojson`
+lässt sich pro Kanton mit `build_canton.py --geoadmin` neu erzeugen; die Karte
+findet sie automatisch, wenn sie neben der `.html` liegt (sonst Live-Modus).
 
 > **Hinweis:** Die Karte per Doppelklick zu öffnen (`file://`) funktioniert nur
 > eingeschränkt — der Browser blockiert das Nachladen der Daten. Die Karte muss
@@ -94,10 +95,20 @@ python3 build_bfs.py                       # → bfs_cantons.json
 # ein Kanton, Kultur-Score (schnell, ohne Zusatz-Downloads)
 python3 build_canton.py --canton AG        # → parcels_scored.geojson
 
-# optional mit Boden + Hangneigung/Höhe (braucht geopandas, rasterio, rasterstats)
+# EMPFOHLEN: zusätzlich Boden + Hangneigung/Höhe pro Parzelle, direkt aus
+# öffentlichen geo.admin-Diensten – kein Download, nur Standardbibliothek:
+python3 build_canton.py --canton AG --geoadmin --max 1500
+
+# (Alternative: aus lokalen Dateien; braucht geopandas, rasterio, rasterstats)
 python3 build_canton.py --canton AG \
     --soil bodeneignung_kulturland.gpkg --dem swissalti3d_ag.tif
 ```
+
+`--geoadmin` holt pro Parzelle die **Bodeneignung** (BLW `identify`) und
+**Höhe + Hangneigung** (swisstopo `height`-API); die Werte fliessen als
+Boden- und Terrain-Faktor in den Score ein (Gewichte im Panel). Aufrufe werden
+auf einem 50-m-Raster zwischengespeichert; `--max` begrenzt die Parzellenzahl
+beim Testen.
 
 Zugriff pro Kanton: 24 von 26 Kantonen sind frei. **Tessin (TI)** verlangt
 Registrierung, **Neuchâtel (NE)** nur für den Massen-Download.
