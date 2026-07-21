@@ -28,13 +28,21 @@ geodienste.ch).
 
 ## Was die Karte kann (ohne Zusatzdaten)
 
-Die gehostete Karte funktioniert **sofort im Live-Modus**: sie lädt Parzellen
-beim Hineinzoomen (Stufe ≥ 13) direkt von geodienste.ch und die BFS-/Kantons­daten
-live. Es ist **keine** Ausführung der Python-Skripte nötig, um zu starten.
+Die gehostete Karte funktioniert **sofort im Live-Modus** (ganze Schweiz): sie lädt
+Parzellen beim Hineinzoomen (Stufe ≥ 13) direkt von geodienste.ch und die
+BFS-/Kantonsdaten live. Es ist **keine** Ausführung der Python-Skripte nötig.
 
-Bedienung: Filter-Panel mit Preset «Mischkultur-Eignung», Reglern für
-Gewichtung (Boden, Hangneigung, Zonen) und Schwellen (max. Hangneigung, max.
-Höhe), sowie einem Kanton-Choropleth für den BFS-Kontext.
+Der Score ist ein transparentes, gewichtetes Mittel aus bis zu fünf Faktoren –
+**Kultur-Eignung, Bodeneignung, Terrain (Hang/Höhe), Umfeld-Diversität, Klima** –
+alle Gewichte im Panel einstellbar. Kultur, Diversität und Klima sind live überall
+verfügbar; **Boden und Terrain** holt die Karte auf **Klick** pro Parzelle direkt
+von geo.admin (oder per Knopf «Sichtbare Parzellen anreichern» für den ganzen
+Ausschnitt). Ein Klick auf «Demo-Kanton (AG) laden» zeigt einen vorab gebackenen,
+voll angereicherten Kanton.
+
+Bedienung: Preset «Mischkultur-Eignung», Score-Gewichts-Regler, weiche
+Hang-/Höhen-Schwellen, Kontext-Raster (Boden, Hangneigung) und ein
+Kanton-Choropleth für den BFS-Kontext.
 
 Die optional «gebackenen» Dateien (siehe unten) machen die Karte schneller,
 offline-robuster und unabhängig von möglichen CORS-Einschränkungen — empfohlen
@@ -49,7 +57,7 @@ für den produktiven Einsatz.
 | `parzellen-eignungskarte.html` | Die Karte. Das ist alles, was Betrachter brauchen. | alle |
 | `cantons.geojson` | Kantonsgrenzen für die BFS-Choropleth (gebündelt). | — |
 | `bfs_cantons.json` | BFS-Kantonskontext: Bio-Anteil, Haupterwerb, Grünland (gebündelt, Jahr 2025). | — |
-| `parcels_scored.geojson` | Demo-Parzellen (AG, Seetal/Aare-Ebene, 500 Stück) mit Boden/Hang/Höhe – zeigt den angereicherten Score. | — |
+| `parcels_scored.geojson` | Demo-Parzellen (AG, Seetal/Aare-Ebene, 500 Stück) mit Boden/Hang/Höhe – per Knopf «Demo-Kanton laden» in der Karte abrufbar. | — |
 | `climate.json` | Grobes Wachstumsgradtage-Raster (GDD) der Schweiz für den Klima-Faktor (gebündelt). | — |
 | `build_canton.py` | Optional: bäckt einen Kanton in eine statische GeoJSON (mit Boden/Hangneigung). | techn. Person |
 | `build_bfs.py` | Optional: erzeugt `bfs_cantons.json` neu (z.B. für ein anderes Jahr). | techn. Person |
