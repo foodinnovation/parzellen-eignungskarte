@@ -1,9 +1,10 @@
 # Parzellen-Eignungskarte Schweiz
 
 Eine statische Web-Karte, die landwirtschaftliche Parzellen der ganzen Schweiz
-nach Eignung für die Mischkultur-Adoption einfärbt (0–100), plus regionalen
-BFS-Kontext (Bio-Anteil, Betriebsform, Grünland) pro Kanton. Basiert
-ausschliesslich auf öffentlichen Geodaten (geodienste.ch, geo.admin.ch, BFS).
+nach Eignung für die Mischkultur-Adoption einfärbt (0–100), plus Getreidemühlen-
+Standorten und regionalem BFS-Kontext (Bio-Anteil, Betriebsform, Grünland) pro
+Kanton. Basiert ausschliesslich auf öffentlichen Geodaten (geodienste.ch,
+geo.admin.ch/BLW, BFS, MeteoSchweiz/Open-Meteo, DSM).
 
 Für die Forschung: dynamische Karten erstellen, *bevor* man mit Fragebögen ins
 Feld geht. Die Karte hebt **Parzellen/Flächen** hervor, nie namentlich Personen —
@@ -32,15 +33,15 @@ Die gehostete Karte funktioniert **sofort im Live-Modus** (ganze Schweiz): sie l
 Parzellen beim Hineinzoomen (Stufe ≥ 13) direkt von geodienste.ch und die
 BFS-/Kantonsdaten live. Es ist **keine** Ausführung der Python-Skripte nötig.
 
-Der Score ist ein transparentes, gewichtetes Mittel aus bis zu fünf Faktoren –
-**Kultur-Eignung, Bodeneignung, Terrain (Hang/Höhe), Umfeld-Diversität, Klima** –
-alle Gewichte im Panel einstellbar. Kultur, Diversität und Klima sind live überall
-verfügbar; **Boden und Terrain** holt die Karte auf **Klick** pro Parzelle direkt
-von geo.admin (oder per Knopf «Sichtbare Parzellen anreichern» für den ganzen
-Ausschnitt) — die Boden-/Terrain-Gewichte sind ausgegraut, solange keine solchen
-Daten geladen sind. Ein Klick zeigt zudem **Luft- und Strassendistanz** zur
-nächsten Getreidemühle (Strassenroute via OSRM). Mühlennähe ist auch als weicher
-Score-Faktor wählbar.
+Der Score ist ein transparentes, gewichtetes Mittel aus bis zu **sechs** Faktoren –
+**Kultur-Eignung, Bodeneignung, Terrain (Hang/Höhe), Umfeld-Diversität, Klima,
+Mühlennähe** (Herkunft & Ableitung siehe [Score-Faktoren & Datenquellen](#score-faktoren--datenquellen)) –
+alle Gewichte im Panel einstellbar. Kultur, Diversität, Klima und Mühlennähe sind
+live überall verfügbar; **Boden und Terrain** holt die Karte auf **Klick** pro
+Parzelle direkt von geo.admin (oder per Knopf «Sichtbare Parzellen anreichern»
+für den ganzen Ausschnitt) — die Boden-/Terrain-Gewichte sind ausgegraut, solange
+keine solchen Daten geladen sind. Ein Klick zeigt zudem **Luft- und Strassendistanz**
+zur nächsten Getreidemühle (Strassenroute via OSRM).
 
 Bedienung: Preset «Mischkultur-Eignung», Score-Gewichts-Regler, weiche
 Hang-/Höhen-Schwellen, Kontext-Raster (Boden, Hangneigung) und ein
@@ -49,6 +50,41 @@ Kanton-Choropleth für den BFS-Kontext.
 Die optional «gebackenen» Dateien (siehe unten) machen die Karte schneller,
 offline-robuster und unabhängig von möglichen CORS-Einschränkungen — empfohlen
 für den produktiven Einsatz.
+
+---
+
+## Score-Faktoren & Datenquellen
+
+Der Eignungs-Score (0–100, türkise Skala) ist ein **gewichtetes Mittel** über die
+pro Parzelle vorhandenen Faktoren. Alle Gewichte sind im Panel «Score-Gewichte»
+einstellbar; jeder Faktor ist eine transparente Heuristik, keine validierte Bewertung.
+
+| Faktor | Quelle | Wie abgeleitet | Verfügbar |
+|---|---|---|---|
+| **Kultur-Eignung** | geodienste.ch Nutzungsflächen (`nutzung`, `lnf_code`) | Feinklassierung: Leguminosen 95 · diverse Ackerkulturen 85 · Getreide 70 · Kunstwiese 55 · Dauerkultur 35 · Futterbau 20 · Grünland 5 (Vieh-Ausschluss) | immer (live) |
+| **Bodeneignung** | BLW Bodeneignungskarte Kulturland (Stand 2008), via geo.admin `identify` am Parzellen-Zentroid | Text `eignungsei` → 0–100: Kulturart-Gewicht (Ackerbau 1.0 … Weide 0.15) × Eignungsnote (`++`=1.0, `+`=0.75, `+/-`=0.45); Siedlung/Fels/See → 5 | nach Anreicherung |
+| **Terrain** | swisstopo `height`-API (swissALTI3D) | Höhe am Zentroid + Hangneigung aus Nachbarpunkten; weiche Straf­kurve rund um die eingestellten Hang-/Höhen-Schwellen | nach Anreicherung |
+| **Umfeld-Diversität** | die geladenen Parzellen selbst | Shannon-Vielfalt der Kultur-Kategorien im ~500-m-Umkreis (Monokultur → 0, gemischt → ~100) | immer |
+| **Klima** | MeteoSchweiz / Open-Meteo (ERA5) | Wachstumsgradtage (GDD, Basis 5 °C, Apr–Okt, Ø 2022/23), grobes Raster; GDD 900 → 0, 2000 → 100 | immer (`climate.json`) |
+| **Mühlennähe** | DSM-Mühlenstandorte (`mills.geojson`) | Luftlinie zur nächsten Mühle → 100 an der Mühle, 0 bei der im Filter gewählten Radius-Distanz | immer · Standardgewicht 0 (aus) |
+
+**«Nach Anreicherung»** = Boden/Terrain existieren erst, wenn du eine Parzelle
+**anklickst**, «Sichtbare Parzellen anreichern» nutzt oder eine gebackene
+`parcels_scored.geojson` lädst. Vorher sind diese beiden Regler ausgegraut
+(«inaktiv, erst anreichern»).
+
+### Getreidemühlen-Ebene
+Ein-/ausblendbare Punkt-Ebene «Getreidemühlen (DSM)»: 36 Mitgliedsbetriebe des
+**Dachverbands Schweizerischer Müller** (≈ >96 % der Weichweizenvermahlung ≈
+praktisch alle gewerblichen Getreidemühlen), aus dem öffentlichen Mitglieder­verzeichnis
+geocodiert (**PLZ-/ortsgenau**, nicht strassengenau). Zwei Verknüpfungen mit dem Score:
+- **Filter** «Nur nahe einer Getreidemühle» + Radius-Regler (1–30 km) → blendet
+  Parzellen jenseits des Radius aus.
+- **Weicher Faktor** «Mühlennähe» (siehe Tabelle).
+
+Beim Klick auf eine Parzelle zeigt das Popup **Luftlinie und Strassendistanz/-fahrzeit**
+zur nächsten Mühle (Strassenroute via OSRM, on-demand pro Klick). Filter und Faktor
+selbst rechnen bewusst mit Luftlinie (Routing für tausende Parzellen ist nicht praktikabel).
 
 ---
 
@@ -159,4 +195,8 @@ Registrierung, **Neuchâtel (NE)** nur für den Massen-Download.
 - Per-Betrieb-Merkmale (Betriebsgrösse, IP-Suisse, Direktzahlungen) sind **nicht**
   öffentlich und daher nicht in der Karte — sie bleiben Feldarbeit.
 - Quellen: geodienste.ch (Nutzungsflächen), geo.admin.ch/BLW (Bodeneignung,
-  Hangneigung), BFS STAT-TAB (Betriebsstruktur).
+  Höhe/Hangneigung), BFS STAT-TAB (Betriebsstruktur), MeteoSchweiz/Open-Meteo
+  (Klima/GDD), Dachverband Schweizerischer Müller DSM (Getreidemühlen),
+  OSRM (Strassenrouting beim Klick). Alle öffentlich zugänglich.
+- Die Getreidemühlen decken die DSM-Mitglieder ab (≈ >96 % der Vermahlung); sehr
+  kleine, nicht-organisierte Mühlen können fehlen. Standorte sind orts-/PLZ-genau.
