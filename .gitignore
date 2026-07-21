@@ -4,5 +4,5 @@ __pycache__/
 
 # Baked data artifacts (regenerate with build scripts)
 parcels_scored.geojson
-bfs_cantons.json
+# bfs_cantons.json is bundled on purpose (BFS canton context for the choropleth)
 # cantons.geojson is bundled on purpose (canton boundaries for the choropleth)

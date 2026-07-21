@@ -47,15 +47,18 @@ für den produktiven Einsatz.
 | Datei | Zweck | Für wen |
 |---|---|---|
 | `parzellen-eignungskarte.html` | Die Karte. Das ist alles, was Betrachter brauchen. | alle |
+| `cantons.geojson` | Kantonsgrenzen für die BFS-Choropleth (gebündelt). | — |
+| `bfs_cantons.json` | BFS-Kantonskontext: Bio-Anteil, Haupterwerb, Grünland (gebündelt, Jahr 2025). | — |
 | `build_canton.py` | Optional: bäckt einen Kanton in eine statische GeoJSON (mit Boden/Hangneigung). | techn. Person |
-| `build_bfs.py` | Optional: lädt die BFS-Kantonszahlen als JSON. | techn. Person |
+| `build_bfs.py` | Optional: erzeugt `bfs_cantons.json` neu (z.B. für ein anderes Jahr). | techn. Person |
 | `farm-parcel-map-build-plan.md` | Konzept & Architektur, Roadmap. | Doku |
 | `phase0-spike-findings.md` | Datenverfügbarkeit & Machbarkeit. | Doku |
 
-Nicht im Repo (per `.gitignore` ausgeschlossen): die gebackenen Datendateien
-`parcels_scored.geojson`, `bfs_cantons.json`, `cantons.geojson` — sie sind
-regenerierbare Ausgaben der Skripte. Wer sie mit ausliefern will, legt sie
-neben die `.html`; die Karte findet sie automatisch.
+`cantons.geojson` und `bfs_cantons.json` sind **bewusst mitgeliefert**, damit die
+Choropleth ohne externe Quellen und ohne CORS-Probleme funktioniert. Nur die
+parzellenweise gebackene `parcels_scored.geojson` bleibt ausgeschlossen (pro
+Kanton mit `build_canton.py` erzeugbar); die Karte findet sie automatisch, wenn
+sie neben der `.html` liegt.
 
 > **Hinweis:** Die Karte per Doppelklick zu öffnen (`file://`) funktioniert nur
 > eingeschränkt — der Browser blockiert das Nachladen der Daten. Die Karte muss
