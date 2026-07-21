@@ -39,13 +39,19 @@
   .basemap{display:flex;gap:6px}
   .basemap button{flex:1;border:1px solid var(--line);background:var(--chip);padding:7px;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;color:var(--ink)}
   .basemap button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .legend{position:absolute;bottom:16px;left:14px;z-index:6;background:rgba(255,255,255,.95);border:1px solid var(--line);
-    border-radius:12px;padding:11px 13px;max-width:300px;box-shadow:0 8px 22px rgba(10,20,30,.15)}
+  .legend{position:absolute;bottom:16px;left:14px;z-index:6;background:rgba(255,255,255,.96);border:1px solid var(--line);
+    border-radius:12px;padding:11px 13px;width:276px;max-height:calc(100vh - 340px);overflow:auto;box-shadow:0 8px 22px rgba(10,20,30,.15)}
   .legend h3{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  .legend .row{display:flex;align-items:center;gap:8px;font-size:12px;margin:4px 0}
-  .legend .box{width:14px;height:14px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.15)}
+  .legend .row{display:flex;align-items:center;gap:8px;font-size:12px;margin:4px 0;line-height:1.25}
+  .legend .box{width:14px;height:14px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.28)}
   .ramp{height:12px;border-radius:6px;margin:6px 0 4px;background:linear-gradient(90deg,#c0392b,#e67e22,#f4d03f,#7fb069,#2f7d4f)}
   .ramp-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+  .legend .lg-note{font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .legend .lg-sec{border-top:1px solid var(--line);margin-top:9px;padding-top:8px}
+  .legend .lg-sec:first-of-type{border-top:none;margin-top:0;padding-top:0}
+  .pat-cross{background-color:#fff;background-image:repeating-linear-gradient(45deg,#7a7a7a 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,#7a7a7a 0 1px,transparent 1px 4px)}
+  .pat-horiz{background-color:#fff;background-image:repeating-linear-gradient(0deg,#7a7a7a 0 1px,transparent 1px 3px)}
+  .pat-chev{background-color:#fff;background-image:repeating-linear-gradient(135deg,#7a7a7a 0 1.4px,transparent 1.4px 5px)}
   .bfs{position:absolute;left:14px;top:104px;z-index:6;background:rgba(255,255,255,.96);border:1px solid var(--line);
     border-radius:12px;padding:11px 13px;width:252px;box-shadow:0 8px 22px rgba(10,20,30,.15)}
   .bfs h3{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
@@ -90,7 +96,7 @@
     <h2>Bewertungs-Ebene</h2>
     <div class="lyr">
       <input type="checkbox" id="chk-score" checked>
-      <span class="sw" style="background:linear-gradient(90deg,#c0392b,#2f7d4f)"></span>
+      <span class="sw" style="background:linear-gradient(90deg,#c0392b,#e67e22,#f4d03f,#7fb069,#2f7d4f)"></span>
       <span class="nm">Eignungs-Score (Parzellen)</span>
     </div>
     <input class="op" type="range" min="0" max="100" value="78" id="op-score">
@@ -104,14 +110,14 @@
     <h2>Kontext-Ebenen</h2>
     <div class="lyr">
       <input type="checkbox" id="chk-soil" checked>
-      <span class="sw" style="background:#339966"></span>
+      <span class="sw" style="background:linear-gradient(90deg,#be0000,#33cc33,#cccc00,#3399ff)"></span>
       <span class="nm">Bodeneignung – Kulturland</span>
     </div>
     <input class="op" type="range" min="0" max="100" value="45" id="op-soil">
     <div class="lyr">
       <input type="checkbox" id="chk-slope" checked>
-      <span class="sw" style="background:#c0392b"></span>
-      <span class="nm">Hangneigung &gt; 30° (Ausschluss)</span>
+      <span class="sw" style="background:linear-gradient(90deg,#f2e50a,#f46f24,#de055b,#c889bb,#4b4b4b)"></span>
+      <span class="nm">Hangneigung &ge; 30° (Kontext)</span>
     </div>
     <input class="op" type="range" min="0" max="100" value="60" id="op-slope">
     <div class="lyr">
@@ -155,7 +161,7 @@
         <option value="gruenland_share">Grünland-Anteil LN (%)</option>
       </select>
     </div>
-    <div id="choro-legend" class="note">Benötigt BFS-Daten (build_bfs.py oder Live-Abfrage).</div>
+    <p class="note" style="margin-top:8px">Skala unten links in der Legende.</p>
   </div>
 
   <div class="sec">
@@ -169,12 +175,49 @@
 </div>
 
 <div class="legend" id="legend">
-  <h3>Eignungs-Score</h3>
-  <div class="ramp"></div>
-  <div class="ramp-lbl"><span>0 ungeeignet</span><span>100 ideal</span></div>
-  <div class="row" style="margin-top:8px"><span class="box" style="background:#9aa5b1"></span> ausgeschlossen (Tierhaltung/Grünland)</div>
-  <div class="row"><span class="box" style="background:#339966"></span> Boden: Acker gut geeignet</div>
-  <div class="row"><span class="box" style="background:#c0392b"></span> Hangneigung &gt; 30°</div>
+  <div class="lg-note">Jede Ebene hat ihre <b>eigene</b> Skala. Achtung: Beim <b>Boden</b> ist Rot = <b>gut</b>,
+    beim Eignungs-Score Rot = schlecht.</div>
+
+  <div class="lg-sec" data-lg="score">
+    <h3>Eignungs-Score · Parzellen</h3>
+    <div class="ramp"></div>
+    <div class="ramp-lbl"><span>0</span><span>50</span><span>100</span></div>
+    <div class="ramp-lbl"><span>ungeeignet</span><span>mässig</span><span>ideal</span></div>
+    <div class="row" style="margin-top:6px"><span class="box" style="background:#9aa5b1"></span> ausgeschlossen (Tierhaltung/Grünland)</div>
+    <div class="note" style="margin-top:4px">Vektor-Parzellen · sichtbar ab Zoomstufe 13.</div>
+  </div>
+
+  <div class="lg-sec" data-lg="soil">
+    <h3>Bodeneignung – Kulturland (BLW)</h3>
+    <div class="row"><span class="box" style="background:#be0000"></span> Sehr gute Produktion (&lt;25% Hang)</div>
+    <div class="row"><span class="box" style="background:#33cc33"></span> Gute Produktion (&lt;25%)</div>
+    <div class="row"><span class="box" style="background:#cccc00"></span> Mässige Produktion (&lt;25%)</div>
+    <div class="row"><span class="box" style="background:#3399ff"></span> Ackerbau beeinträchtigt (bis 35%)</div>
+    <div class="row"><span class="box" style="background:#828282"></span> Ungeeignet</div>
+    <div class="row"><span class="box" style="background:#ffffff"></span> Seen, Enklaven</div>
+  </div>
+
+  <div class="lg-sec" data-lg="slope">
+    <h3>Hangneigung ≥ 30° (swisstopo)</h3>
+    <div class="row"><span class="box" style="background:#f2e50a"></span> 30–35°</div>
+    <div class="row"><span class="box" style="background:#f46f24"></span> 35–40°</div>
+    <div class="row"><span class="box" style="background:#de055b"></span> 40–45°</div>
+    <div class="row"><span class="box" style="background:#c889bb"></span> 45–50°</div>
+    <div class="row"><span class="box" style="background:#4b4b4b"></span> &gt; 50°</div>
+  </div>
+
+  <div class="lg-sec" data-lg="zones">
+    <h3>Datenverfügbarkeit Kantone</h3>
+    <div class="row"><span class="box pat-chev"></span> vorhanden</div>
+    <div class="row"><span class="box" style="background:#d9d9d9"></span> im Aufbau</div>
+    <div class="row"><span class="box pat-horiz"></span> ausser Betrieb</div>
+    <div class="row"><span class="box pat-cross"></span> keine Daten</div>
+  </div>
+
+  <div class="lg-sec" data-lg="choro">
+    <h3>BFS-Kennzahl · Kantone</h3>
+    <div id="choro-legend" class="note">Kennzahl im Panel wählen; benötigt BFS-Daten.</div>
+  </div>
 </div>
 
 <div class="bfs" id="bfs">
@@ -264,6 +307,15 @@ const store=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
 const load=(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}};
 const setStatus=t=>document.getElementById('status').textContent=t;
 
+/* show each legend block only when its layer is actually visible */
+const LEGEND_CHK={score:'chk-score',soil:'chk-soil',slope:'chk-slope',zones:'chk-zones',choro:'chk-choro'};
+function syncLegend(){
+  for(const key in LEGEND_CHK){
+    const sec=document.querySelector('.lg-sec[data-lg="'+key+'"]');
+    const chk=document.getElementById(LEGEND_CHK[key]);
+    if(sec&&chk) sec.style.display=chk.checked?'':'none';
+  }
+}
 function bindLayer(chkId,opId,layerId){
   const chk=document.getElementById(chkId),op=document.getElementById(opId);
   const paintKey=(layerId==='parcels-fill')?'fill-opacity':'raster-opacity';
@@ -273,6 +325,7 @@ function bindLayer(chkId,opId,layerId){
     if(layerId==='parcels-fill'){map.setLayoutProperty('parcels-line','visibility',chk.checked?'visible':'none');}
     map.setPaintProperty(layerId,paintKey,(+op.value)/100);
     store('ck_'+layerId,chk.checked?'1':'0');store('op_'+layerId,op.value);
+    syncLegend();
   };
   const ck=load('ck_'+layerId,null);if(ck!==null)chk.checked=ck==='1';
   const ov=load('op_'+layerId,null);if(ov!==null)op.value=ov;
@@ -414,6 +467,7 @@ async function getCantonGeo(){
 }
 const METRIC_LBL={bio_share:'Bio-Betriebe',haupt_share:'Haupterwerb',gruenland_share:'Grünland-Anteil LN'};
 function applyChoro(){
+  syncLegend();
   const on=document.getElementById('chk-choro').checked, vis=on?'visible':'none';
   if(map.getLayer('cantons-fill')){map.setLayoutProperty('cantons-fill','visibility',vis);
     map.setLayoutProperty('cantons-line','visibility',vis);}
